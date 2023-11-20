@@ -9,6 +9,21 @@ from torch import Tensor
 import numpy as np
 
 
+####################################    Transformer   ####################################
+
+def posemb_sincos_2d(patches, temperature = 10000, dtype = torch.float32):
+    _, h, w, dim, device, dtype = *patches.shape, patches.device, patches.dtype
+
+    y, x = torch.meshgrid(torch.arange(h, device = device), torch.arange(w, device = device), indexing = 'ij')
+    assert (dim % 4) == 0, 'feature dimension must be multiple of 4 for sincos emb'
+    omega = torch.arange(dim // 4, device = device) / (dim // 4 - 1)
+    omega = 1. / (temperature ** omega)
+
+    y = y.flatten()[:, None] * omega[None, :]
+    x = x.flatten()[:, None] * omega[None, :] 
+    pe = torch.cat((x.sin(), x.cos(), y.sin(), y.cos()), dim = 1)
+    return pe.type(dtype)
+
 class PositionalEncoding(nn.Module):
     """ Positional Encoding module injects information about the relative position of the tokens in the sequence.
 
@@ -34,15 +49,15 @@ class PositionalEncoding(nn.Module):
         # 5000,1,1024
         # calc cosine on odd indices       
         pos_emb[:, 0, 1::2] = torch.cos(position * div_term)
-        # buffers are saved in state_dict but not trained by the optimizer                        
+        # registered buffers are saved in state_dict but not trained by the optimizer           
         self.register_buffer('pos_emb', pos_emb)
 
     def forward(self) -> Tensor:
-        """ Forward pass of PositionalEncoding module.
-        Args:
-            embeddings + positional encodings (batch_size, seq_length, d_model)
+        """ 
+        Forward pass of PositionalEncoding module.
         """
-        return self.pos_emb.permute(1, 0, 2)
+        self.pos_emb = self.pos_emb.permute(1, 0, 2)
+        return self.dropout(self.pos_emb)
 
 
 ####################################    Norm   ####################################
@@ -50,9 +65,11 @@ class PositionalEncoding(nn.Module):
 class AdaptiveInstanceNorm2d(nn.Module):
     """ AdaptiveInstanceNorm2d module implements adaptive instance normalization layer.
     Args:
-        nn ( ): module
+        num_features: num_features default 1024
+        eps: epsilon default 1e-5
+        momentum: momentum default 0.1
     """
-    def __init__(self, num_features, eps=1e-5, momentum=0.1):
+    def __init__(self, num_features: int, eps: float = 1e-5, momentum:float = 0.1):
         super(AdaptiveInstanceNorm2d, self).__init__()
         # num_features: 1024
         self.num_features = num_features
@@ -339,7 +356,7 @@ class PatchEmbedding(nn.Module):
 ####################################    Aggregator   ####################################
 
 
-####################################    Decoder   ####################################
+####################################    Generator   ####################################
 
 class Transpose(nn.Module):
     # Transpose layer; dim0 and dim1 are the dimension to be swapped
@@ -375,7 +392,7 @@ class Upsample(nn.Module):
         else:
             return ret_val[:, :, :-1, :-1]
 
-####################################    Decoder   ####################################
+####################################    Generator   ####################################
 
 
 ####################################    Discriminator   ####################################

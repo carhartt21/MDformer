@@ -37,8 +37,8 @@ def model_forward(inputs, model, num_box=-1, task=I2I, feat_layers=[]): #i2i==Fa
         else:
             aggregated_feat, aggregated_box = model['Transformer'](feat_content, inputs['B_box'], num_box)
 
-    fake = model['Decoder'](aggregated_feat)
-    fake_box = model['Decoder'](aggregated_box, inputs['A_box']) if task == I2I and 'A_box' in inputs else None
+    fake = model['Generator'](aggregated_feat)
+    fake_box = model['Generator'](aggregated_box, inputs['A_box']) if task == I2I and 'A_box' in inputs else None
     
     return fake, fake_box, temp
 

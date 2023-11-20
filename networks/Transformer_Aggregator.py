@@ -48,7 +48,18 @@ class AdaIn_Transformer(nn.Module):
 
 class Transformer_Aggregator(nn.Module):
     # TODO: Add support for multiple layers
-    def __init__(self, img_size=88, patch_size=8, embed_C=1024, feat_C=256, depth=6, heads=4, mlp_dim=4096):
+    def __init__(self, img_size: int = 88, patch_size: int = 8, embed_C: int = 1024, feat_C: int = 256, depth: int = 6, heads: int = 4, mlp_dim: int =4096):
+        '''
+        Transformer Aggregator
+        Args:
+            img_size: image size at transformer input
+            patch_size: patch size for patch embedding
+            embed_C: embedding channels
+            feat_C: feature channels
+            depth: dimension of transformer
+            heads: heads of transformer
+            mlp_dim: mlp dimension
+        '''
         super(Transformer_Aggregator, self).__init__()
         self.img_size = img_size
         self.patch_size = patch_size
@@ -62,7 +73,7 @@ class Transformer_Aggregator(nn.Module):
         self.pos_embed_y = blocks.PositionalEncoding(d_model=embed_C//4, dropout=0., max_len=img_size)
         self.pos_embed_h = blocks.PositionalEncoding(d_model=embed_C//4, dropout=0., max_len=img_size)
         self.pos_embed_w = blocks.PositionalEncoding(d_model=embed_C//4, dropout=0., max_len=img_size)        
-        
+        # position embedding for box with center coordinates x, y, width w and height h
         pos_embed = torch.cat((
                 self.pos_embed_x()[..., None, :].repeat(1, 1, img_size, 1), # 
                 self.pos_embed_y()[:, None].repeat(1, img_size, 1, 1), #

@@ -4,9 +4,9 @@ import torch.nn.functional as F
 
 from . import blocks
 
-class Decoder(nn.Module):
+class Generator(nn.Module):
     def __init__(self, img_size=88, patch_size=8, embed_C=1024, feat_C=256, ngf=64, n_downsampling=2, use_bias=True):
-        super(Decoder, self).__init__()
+        super(Generator, self).__init__()
         
 
         self.inv_patch_embed = nn.Sequential(blocks.Transpose(1, 2),
