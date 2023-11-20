@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import numpy as np
 from collections import OrderedDict
-from lib.nn import user_scattered_collate, async_copy_to
+# from lib.nn import user_scattered_collate, async_copy_to
 
 
 from data.single_dataset import SingleDataset
@@ -37,7 +37,7 @@ def baseline_model_load(model_cfg, device):
     model_G['StyleEncoder'] = networks.StyleEncoder()
     model_G['Transformer'] = networks.Transformer_Aggregator()
     model_G['MLP_Adain'] = networks.MLP()
-    model_G['Decoder'] = networks.Decoder()
+    model_G['Generator'] = networks.Generator()
 
     model_D['Discrim'] = networks.NLayerDiscriminator()
 
@@ -127,7 +127,7 @@ def data_loader(data_cfg, batch_size, num_workers, train_mode):
         source_dataset_test,
         batch_size=batch_size,
         shuffle=False,
-        collate_fn=user_scattered_collate,
+        # collate_fn=user_scattered_collate,
         num_workers=num_workers,
         pin_memory=True,        
         drop_last=True)
