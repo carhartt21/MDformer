@@ -1,5 +1,5 @@
 Train: 
-  model_name: 'Instaformer_init' # name of the experiment. It decides where to store samples and models
+  model_name: 'MDformer' # name of the experiment. It decides where to store samples and models
   log_path: './weights' # path of weights
   use_cuda: True
   seed: 42
@@ -17,9 +17,9 @@ Train:
   w_Style: 10.0 # weight for style loss
   w_NCE: 2.0 # weight for NCE loss
   w_Instance_NCE: 2.0 # weight for instance NCE loss
-  display_iter: 1000 # frequency of saving the latest results
-  display_epoch: 1 # frequency of saving checkpoints at the end of epochs
-  save_img_iter: 150 # frequency of saving the latest trainng images
+  display_iter: 200 # frequency of saving the latest results
+  display_epoch: 5 # frequency of saving checkpoints at the end of epochs
+  save_img_iter: 200 # frequency of saving the latest training images
 
   model:
     load_weight : False # if training from scratch, set this as False
