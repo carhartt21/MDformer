@@ -45,6 +45,7 @@ Train:
     
 
   visualize:
+    enabled: False # visualize the training process using visdom
     display_winsize: 256 # visdom display size
     display_freq: 400 # frequency of showing training results on screen
     display_ncols:  4 # if positive, display all images in a single visdom web panel with certain number of images per row.

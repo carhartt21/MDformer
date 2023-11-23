@@ -50,7 +50,7 @@ def save_images(webpage, visuals, image_path, aspect_ratio=1.0, width=256, i2=No
 class Visualizer():
     """This class includes several functions that can display/save images and print/save logging information.
 
-    It uses a Python library 'visdom' for display, and a Python library 'dominate' (wrapped in 'HTML') for creating HTML files with images.
+    It uses 'visdom' for display, and 'dominate' (wrapped in 'HTML') for creating HTML files with images.
     """
 
     def __init__(self, name, log_path, opt):
@@ -60,7 +60,7 @@ class Visualizer():
             opt -- stores all the experiment flags; needs to be a subclass of BaseOptions
         Step 1: Cache the training/test options
         Step 2: connect to a visdom server
-        Step 3: create an HTML object for saveing HTML filters
+        Step 3: create an HTML object for saving HTML filters
         Step 4: create a logging file to store training losses
         """
         self.opt = opt  # cache the option
@@ -74,7 +74,9 @@ class Visualizer():
         self.name = name
         self.port = opt.display_port
         self.saved = False
-        if self.display_id > 0:  # connect to a visdom server given <display_port> and <display_server>
+        self.enabled = opt.enabled
+        
+        if self.enabled and self.display_id > 0:  # connect to a visdom server given <display_port> and <display_server>
             import visdom
             self.plot_data = {}
             self.ncols = opt.display_ncols
