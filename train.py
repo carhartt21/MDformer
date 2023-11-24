@@ -38,7 +38,8 @@ if __name__ == "__main__":
         # configuration
         conf =  yaml.load(f, Loader=yaml.FullLoader)
         train_cfg = DotMap(conf['Train'])
-        device = torch.device("cuda" if train_cfg.use_cuda else "cpu")
+        # device = torch.device("cuda" if train_cfg.use_cuda else "cpu")
+        device = torch.device('cuda:{}'.format(train_cfg.gpu_ids[0])) if train_cfg.gpu_ids else torch.device('cpu')        
 
         # seed 
         initialize.seed_everything(train_cfg.seed)
@@ -111,8 +112,8 @@ if __name__ == "__main__":
 
                     parameter_F = []
                     for key, val in model_F.items():
-                        model_F[key] = nn.DataParallel(val)
-                        model_F[key].to(device)
+                        model_F[key] = nn.DataParallel(val, device_ids=train_cfg.gpu_ids)
+                        # model_F[key].to(device)
                         model_F[key].train()
                         parameter_F += list(val.parameters())
                     optimizer_F = optim.Adam(parameter_F, float(train_cfg.lr))

@@ -20,6 +20,7 @@ Train:
   display_iter: 200 # frequency of saving the latest results
   display_epoch: 5 # frequency of saving checkpoints at the end of epochs
   save_img_iter: 200 # frequency of saving the latest training images
+  gpu_ids: [0, 1] # gpu ids: e.g. 0, 1, 2. use -1 for CPU
 
   model:
     load_weight : False # if training from scratch, set this as False

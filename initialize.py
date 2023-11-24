@@ -8,6 +8,9 @@ import numpy as np
 from collections import OrderedDict
 # from lib.nn import user_scattered_collate, async_copy_to
 
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data.distributed import DistributedSampler
+import torch.distributed as dist
 
 from data.single_dataset import SingleDataset
 from data import create_dataset
@@ -21,7 +24,7 @@ def seed_everything(seed=42):
     os.environ['PYTHONHASHSEED'] = str(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    # torch.cuda.manual_seed_all(random_seed) # if use multi-GPU
+    torch.cuda.manual_seed_all(seed) # if use multi-GPU
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
     # print(f"seed : {seed}")
