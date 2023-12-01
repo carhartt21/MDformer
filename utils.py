@@ -7,6 +7,9 @@ import cv2
 import numpy as np
 import torch
 from torch import nn
+import logging
+import sys
+
 
 ##################################### Visualize ##################################### 
 
@@ -59,6 +62,22 @@ def segmentation_to_bbox(mask, bg_classes = [0,1,2]):
         bboxes[cls] = [x_min, y_min, x_max, y_max]
     return bboxes
 
+def setup_logger(distributed_rank=0, filename="log.txt"):
+    logger = logging.getLogger("Logger")
+    logger.setLevel(logging.DEBUG)
+    # don't log results for the non-master process
+    if distributed_rank > 0:
+        return logger
+    ch = logging.StreamHandler(stream=sys.stdout)
+    ch.setLevel(logging.DEBUG)
+    fmt = "[%(asctime)s %(levelname)s %(filename)s] %(message)s"
+    ch.setFormatter(logging.Formatter(fmt))
+    logger.addHandler(ch)
+
+    return logger    
+
+def user_scattered_collate(batch):
+    return batch
 
 def assign_adain_params(adain_params, model):
     # assign the adain_params to the AdaIN layers in model

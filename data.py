@@ -23,15 +23,15 @@ def imresize(im, size, interp='bilinear'):
 
 
 class BaseDataset(torch.utils.data.Dataset):
-    # def __init__(self, odgt, opt, **kwargs):
     def __init__(self, odgt, opt, **kwargs):
         # parse options
-        # self.img_sizes = opt.img_sizes
-        # self.img_max_size = opt.img_max_size
-        self.img_sizes = [400]
-        self.img_max_size = 1280
+        self.img_sizes = opt.img_sizes
+        self.img_max_size = opt.img_max_size
+        # self.img_sizes = [400]
+        # self.img_max_size = 1280
 
         # max down sampling rate of network to avoid rounding during conv or pooling
+        self.max_down_sampling_rate = 8
         self.padding_constant = 32
 
         # parse the input list

@@ -55,34 +55,34 @@ def compute_D_loss(inputs, fake_img, model_D, criterions):
 
     return total_D_loss, D_losses
 
-def compute_G_loss(inputs, fake_img, recon_img, style_code, features, box_feature, model_G, model_D, model_F, criterions, train_cfg):
+def compute_G_loss(inputs, fake_img, recon_img, style_code, features, box_feature, model_G, model_D, model_F, criterions, cfg):
     """Calculate loss for the generator"""
     G_losses = {}
     total_G_loss = 0
 
-    if train_cfg.w_GAN > 0.0:
-        G_losses['GAN_loss'] = train_cfg.w_GAN * compute_GAN_loss(fake_img, model_D['Discrim'], criterions['GAN'])
-    if train_cfg.w_Recon > 0.0:
-        G_losses['recon_loss'] = train_cfg.w_Recon * compute_recon_loss(recon_img, inputs['Target'], criterions['Idt'])
-    if train_cfg.w_Style > 0.0:
+    if cfg.TRAIN.w_GAN > 0.0:
+        G_losses['GAN_loss'] = cfg.TRAIN.w_GAN * compute_GAN_loss(fake_img, model_D['Discrim'], criterions['GAN'])
+    if cfg.TRAIN.w_Recon > 0.0:
+        G_losses['recon_loss'] = cfg.TRAIN.w_Recon * compute_recon_loss(recon_img, inputs['Target'], criterions['Idt'])
+    if cfg.TRAIN.w_Style > 0.0:
         recon_style_code = model_G['StyleEncoder'](recon_img)
-        G_losses['style_loss'] = train_cfg.w_Style * compute_recon_loss(recon_style_code, style_code, criterions['Idt'])
+        G_losses['style_loss'] = cfg.TRAIN.w_Style * compute_recon_loss(recon_style_code, style_code, criterions['Idt'])
     
-    if train_cfg.w_NCE > 0.0 or (train_cfg.w_Instance_NCE > 0.0 and train_cfg.data.num_box > 0):
-        fake_feat_content, fake_features = model_G['ContentEncoder'](fake_img, train_cfg.model.feat_layers)
+    if cfg.TRAIN.w_NCE > 0.0 or (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.num_box > 0):
+        fake_feat_content, fake_features = model_G['ContentEncoder'](fake_img, cfg.MODEL.feat_layers)
 
-        if train_cfg.w_Instance_NCE > 0.0 and train_cfg.data.num_box > 0:
-            fake_box_feature = model_G['Transformer'].module.extract_box_feature(fake_feat_content, inputs['A_box'], train_cfg.data.num_box)
+        if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.num_box > 0:
+            fake_box_feature = model_G['Transformer'].module.extract_box_feature(fake_feat_content, inputs['A_box'], train.DATASET.num_box)
 
-    if train_cfg.w_NCE > 0.0:
-        G_losses['NCE_loss'] = train_cfg.w_NCE * compute_NCE_loss(fake_features, features, model_F['MLP_head'], criterions['NCE'], train_cfg.model.num_patches)
-    if train_cfg.w_Instance_NCE > 0.0 and train_cfg.data.num_box > 0:
+    if cfg.TRAIN.w_NCE > 0.0:
+        G_losses['NCE_loss'] = cfg.TRAIN.w_NCE * compute_NCE_loss(fake_features, features, model_F['MLP_head'], criterions['NCE'], cfg.MODEL.num_patches)
+    if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.num_box > 0:
         valid_box=torch.where(inputs['A_box'][:,:,0] != -1, True,False).view(-1)
         if valid_box[valid_box ==  True].shape[0] == 0.0:
             G_losses['instNCE_loss'] = torch.tensor(0.0).to(inputs['A'].device)
         else:
             criterions['InstNCE'].batch_size = valid_box[valid_box ==  True].shape[0]
-            G_losses['instNCE_loss'] = train_cfg.w_Instance_NCE * compute_NCE_loss([fake_box_feature[valid_box,:,:,:]], [box_feature[valid_box,:,:,:]], model_F['MLP_head_inst'], criterions['InstNCE'], 64)
+            G_losses['instNCE_loss'] = cfg.TRAIN.w_Instance_NCE * compute_NCE_loss([fake_box_feature[valid_box,:,:,:]], [box_feature[valid_box,:,:,:]], model_F['MLP_head_inst'], criterions['InstNCE'], 64)
 
     for loss in G_losses.values():
         total_G_loss += loss

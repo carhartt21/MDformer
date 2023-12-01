@@ -7,13 +7,14 @@ from torch.utils.data import DataLoader
 import numpy as np
 from collections import OrderedDict
 # from lib.nn import user_scattered_collate, async_copy_to
+from utils import user_scattered_collate
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 
 from data.single_dataset import SingleDataset
-from data import create_dataset
+# from data import create_dataset
 # from data import TrainDataset
 import utils
 import networks
@@ -47,11 +48,13 @@ def baseline_model_load(model_cfg, device):
     model_F['MLP_head'] = networks.MLP_Head()
     model_F['MLP_head_inst'] = networks.MLP_Head(nc=64)
 
+    # model_M['Mapping Network'] = networks.MappingNetwork(num_domains=2, style_dim=64, hidden_dim=1024, num_layers=3)
+
     if model_cfg.load_weight:
         print("Loading Network weights")
         for key in model_G.keys():
             # file = os.path.join(model_cfg.weight_path, f'{key}.pth')
-            file = os.path.join(model_cfg.load_weight_path, f'{key}.pth')
+            file = os.path.join(model_cfg.weight_path, f'{key}.pth')
             if os.path.isfile(file):
                 print(f"Success load {key} weight")
                 model_load_dict = torch.load(file, map_location=device)
@@ -75,7 +78,7 @@ def baseline_model_load(model_cfg, device):
                 print(f"Dose not exist {file}")
 
         for key in model_D.keys():
-            file = os.path.join(model_cfg.load_weight_path, f'{key}.pth')
+            file = os.path.join(model_cfg.weight_path, f'{key}.pth')
             if os.path.isfile(file):
                 print(f"Success load {key} weight")
                 model_load_dict = torch.load(file, map_location=device)
@@ -118,39 +121,18 @@ def baseline_model_load(model_cfg, device):
     return model_G, parameter_G, model_D, parameter_D, model_F
 
 
-def data_loader(data_cfg, batch_size, num_workers, train_mode):
-    # datasets_dict = {
-    #     'skycloud': TrainDataset,
-    # }
-    # selected_dataset = datasets_dict[data_cfg.dataset]
-
-    # dataset = selected_dataset(data_cfg,train_mode)
-    source_dataset_test = SingleDataset(data_cfg)
-    data_loader = DataLoader(
-        source_dataset_test,
-        batch_size=batch_size,
-        shuffle=False,
-        # collate_fn=user_scattered_collate,
-        num_workers=num_workers,
-        pin_memory=True,        
-        drop_last=True)
-
-    # data_loader = DataLoader(dataset, batch_size, True,num_workers=num_workers, pin_memory=True, drop_last=True)
-
-    return data_loader
-
-def criterion_set(train_cfg, device):
+def criterion_set(cfg, device):
     criterions = {}
     criterions['GAN'] = utils.GANLoss().to(device)
     criterions['Idt'] = torch.nn.L1Loss().to(device)
-    criterions['NCE'] = utils.PatchNCELoss(train_cfg.batch_size).to(device)
-    criterions['InstNCE'] = utils.PatchNCELoss(train_cfg.batch_size * train_cfg.data.num_box).to(device)
+    criterions['NCE'] = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu).to(device)
+    criterions['InstNCE'] = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu * cfg.DATASET.num_box).to(device)
     return criterions
 
-def criterion_test(test_cfg, device):
+def criterion_test(cfg, device):
     criterions = {}
     criterions['GAN'] = utils.GANLoss().to(device)
     criterions['Idt'] = torch.nn.L1Loss().to(device)
-    criterions['NCE'] = utils.PatchNCELoss(test_cfg.batch_size).to(device)
-    criterions['InstNCE'] = utils.PatchNCELoss(test_cfg.batch_size * test_cfg.data.num_box).to(device)
+    criterions['NCE'] = utils.PatchNCELoss(cfg.TEST.batch_size).to(device)
+    criterions['InstNCE'] = utils.PatchNCELoss(cfg.TEST.batch_size * cfg.DATASET.num_box).to(device)
     return criterions

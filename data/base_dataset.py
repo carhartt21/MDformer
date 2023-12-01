@@ -27,7 +27,7 @@ class BaseDataset(data.Dataset, ABC):
             opt (Option class)-- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
         self.opt = opt
-        self.root = opt.dir_A
+        self.root = opt.DATASET.dir_A
         self.current_epoch = 0
 
     @staticmethod
@@ -61,61 +61,60 @@ class BaseDataset(data.Dataset, ABC):
         pass
 
 
-def get_params(opt, size):
+def get_params(cfg, size):
     w, h = size
     new_h = h
     new_w = w
-    if opt.preprocess == 'resize_and_crop':
-        new_h = new_w = opt.load_size
-    elif opt.preprocess == 'scale_width_and_crop':
-        new_w = opt.load_size
-        new_h = opt.load_size * h // w
+    if cfg.TRAIN.preprocess == 'resize_and_crop':
+        new_h = new_w = cfg.load_size
+    elif cfg.TRAIN.preprocess == 'scale_width_and_crop':
+        new_w = cfg.load_size
+        new_h = cfg.load_size * h // w
 
-    x = random.randint(0, np.maximum(0, new_w - opt.crop_size))
-    y = random.randint(0, np.maximum(0, new_h - opt.crop_size))
+    x = random.randint(0, np.maximum(0, new_w - cfg.TRAIN.crop_size))
+    y = random.randint(0, np.maximum(0, new_h - cfg.TRAIN.crop_size))
 
     flip = random.random() > 0.5
 
     return {'crop_pos': (x, y), 'flip': flip}
 
 
-def get_transform(opt, params=None, grayscale=False, method=Image.BICUBIC, convert=True):
+def get_transform(cfg, params=None, method=Image.BICUBIC, convert=True):
     transform_list = []
-    if grayscale:
+    # print('cfg: {}'.format(cfg))
+    cfg_train = cfg.TRAIN
+    if cfg_train.preprocess.grayscale:
         transform_list.append(transforms.Grayscale(1))
-    if 'fixsize' in opt.preprocess:
-        transform_list.append(transforms.Resize(params["size"], method))
-    # if 'resize' in opt.preprocess:
-    osize = [opt.width, opt.height]
-    transform_list.append(transforms.Resize(osize, method))
+    if cfg_train.preprocess.resize:
+        transform_list.append(transforms.Resize(cfg.MODEL.imgSize, method))
     
-    if 'scale_width' in opt.preprocess:
-        transform_list.append(transforms.Lambda(lambda img: __scale_width(img, opt.load_size, opt.crop_size, method)))
-    elif 'scale_shortside' in opt.preprocess:
-        transform_list.append(transforms.Lambda(lambda img: __scale_shortside(img, opt.load_size, opt.crop_size, method)))
+    if cfg_train.preprocess.scale_width:
+        transform_list.append(transforms.Lambda(lambda img: __scale_width(img, cfg_train.load_size, cfg_train.crop_size, method)))
+    elif cfg_train.preprocess.scale_shortside:
+        transform_list.append(transforms.Lambda(lambda img: __scale_shortside(img, cfg_train.load_size, cfg_train.crop_size, method)))
 
-    if 'zoom' in opt.preprocess:
+    if cfg_train.preprocess.zoom:
         if params is None:
-            transform_list.append(transforms.Lambda(lambda img: __random_zoom(img, opt.load_size, opt.crop_size, method)))
+            transform_list.append(transforms.Lambda(lambda img: __random_zoom(img, cfg_train.load_size, cfg_train.crop_size, method)))
         else:
-            transform_list.append(transforms.Lambda(lambda img: __random_zoom(img, opt.load_size, opt.crop_size, method, factor=params["scale_factor"])))
+            transform_list.append(transforms.Lambda(lambda img: __random_zoom(img, cfg_train.load_size, cfg_train.crop_size, method, factor=params["scale_factor"])))
 
-    if 'crop' in opt.preprocess:
+    if cfg_train.preprocess.crop:
         if params is None or 'crop_pos' not in params:
-            transform_list.append(transforms.RandomCrop(opt.crop_size))
+            transform_list.append(transforms.RandomCrop(cfg_train.preprocess.crop_size))
         else:
-            transform_list.append(transforms.Lambda(lambda img: __crop(img, params['crop_pos'], opt.crop_size)))
+            transform_list.append(transforms.Lambda(lambda img: __crop(img, params['crop_pos'], cfg_train.preprocess.crop_size)))
 
-    if 'patch' in opt.preprocess:
-        transform_list.append(transforms.Lambda(lambda img: __patch(img, params['patch_index'], opt.crop_size)))
+    if cfg_train.preprocess.patch:
+        transform_list.append(transforms.Lambda(lambda img: __patch(img, params['patch_index'], cfg_train.preprocess.crop_size)))
 
-    if 'trim' in opt.preprocess:
-        transform_list.append(transforms.Lambda(lambda img: __trim(img, opt.crop_size)))
+    if cfg_train.preprocess.trim:
+        transform_list.append(transforms.Lambda(lambda img: __trim(img, cfg_train.preprocess.crop_size)))
 
-    # if opt.preprocess == 'none':
+    # else:
     transform_list.append(transforms.Lambda(lambda img: __make_power_2(img, base=4, method=method)))
 
-    if not opt.no_flip:
+    if cfg_train.preprocess.flip:
         if params is None or 'flip' not in params:
             transform_list.append(transforms.RandomHorizontalFlip())
         elif 'flip' in params:
@@ -123,7 +122,7 @@ def get_transform(opt, params=None, grayscale=False, method=Image.BICUBIC, conve
 
     if convert:
         transform_list += [transforms.ToTensor()]
-        if grayscale:
+        if cfg_train.preprocess.grayscale:
             transform_list += [transforms.Normalize((0.5,), (0.5,))]
         else:
             transform_list += [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]

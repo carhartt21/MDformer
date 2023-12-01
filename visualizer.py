@@ -69,13 +69,13 @@ class Visualizer():
             self.display_id = np.random.randint(100000) * 10  # just a random display id
         else:
             self.display_id = opt.display_id
-        self.use_html = not opt.no_html
+        self.use_html = opt.save_intermediate
         self.win_size = opt.display_winsize
         self.name = name
-        self.port = opt.display_port
+        self.port = opt.port
         self.saved = False
         self.enabled = opt.enabled
-        
+
         if self.enabled and self.display_id > 0:  # connect to a visdom server given <display_port> and <display_server>
             import visdom
             self.plot_data = {}

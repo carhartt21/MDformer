@@ -1,0 +1,58 @@
+TRAIN: 
+  log_path: './weights' # path of weights
+  use_cuda: True
+  seed: 42
+  start_epoch: 0 # if resume, set this as a number
+  end_epoch: 200 # number of epochs of training
+  batch_size_per_gpu: 4 # input batch size
+  num_workers: 5 # # threads for loading data
+  lr: 2e-4 # initial learning rate for adam
+  optim_beta: [0.5, 0.999] # momentum terms of adam
+  lr_scheduler: True
+  scheduler_step_size: 150
+  w_GAN: 1.0 # weight for GAN loss
+  w_Recon: 10.0 # weight for recon loss
+  w_Style: 10.0 # weight for style loss
+  w_NCE: 2.0 # weight for NCE loss
+  w_Instance_NCE: 2.0 # weight for instance NCE loss
+  display_iter: 200 # frequency of saving the latest results
+  save_epoch: 5 # frequency of saving checkpoints at the end of epochs
+  image_save_iter: 200 # frequency of saving the latest training images
+  print_freq: 100 # frequency of showing training results on console
+  gpu_ids: [0] # gpu ids: e.g. 0, 1, 2. use -1 for CPU
+
+MODEL:
+  name: 'MDformer' # name of the experiment. It decides where to store samples and models
+  load_weight : False # if training from scratch, set this as False
+  load_optimizer : False # if training from scratch, set this as False
+  weight_path : None # if training from scratch, set this as None
+  weight_path: None # if training from scratch, set this as None
+  feat_layers: [0,4,8] # compute NCE loss on which layers
+  num_patches: 256 # number of patches per layer
+  patch_size: 1 # patch size
+  num_neg: 64 # number of negative samples
+  num_pos: 1 # number of positive samples
+  imgSize: (352, 352) # scale images to this size
+
+
+
+DATASET:
+  name: 'init'
+  dataset_mode: 'unaligned' # specifies how datasets are loaded. [unaligned | aligned | single | colorization]')
+  dir_A: 'dataset/sunny_warm' # path of dataset_A
+  dir_B: 'dataset/snow_cold' # path of dataset_A
+  num_box: -1 # # box
+  max_dataset_size: 20000 # Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.
+  
+
+VISDOM:
+  enabled: False # visualize the training process using visdom
+  display_winsize: 256 # visdom display size
+  display_freq: 400 # frequency of showing training results on screen
+  display_ncols:  4 # if positive, display all images in a single visdom web panel with certain number of images per row.
+  display_id: -1 # window id of the web display.
+  server: "http://localhost" # visdom server of the web display
+  env:  'main' # visdom display environment name (default is "main")
+  port: 8098 # visdom port of the web display
+  save_epoch_freq: 1000 # frequency of saving training results to html
+  save_intermediate: False # do not save intermediate training results to [opt.checkpoints_dir]/[opt.name]/web/
