@@ -70,10 +70,9 @@ class CustomDatasetDataLoader():
         Step 2: create a multi-threaded data loader.
         """
         self.cfg = cfg
-        print("cfg.dataset_mode: {}".format(self.cfg.data.dataset_mode))
         dataset_class = find_dataset_using_name(self.cfg.data.dataset_mode)
         self.dataset = dataset_class(self.cfg.data)
-        print("dataset [%s] was created" % type(self.dataset).__name__)
+        # print("dataset [%s] was created" % type(self.dataset).__name__)
         self.dataloader = torch.utils.data.DataLoader(
             self.dataset,
             batch_size=cfg.batch_size,

@@ -73,6 +73,7 @@ if __name__ == "__main__":
         criterions = initialize.criterion_set(train_cfg, device)
 
         # set visualize (visdom)
+        # if train_cfg.visualize.enabled:
         visualizer = Visualizer(train_cfg.model_name, train_cfg.log_path, train_cfg.visualize)   # create a visualizer that display/save images and plots
 
         print('Start Training')
@@ -80,7 +81,7 @@ if __name__ == "__main__":
             utils.model_mode(model_G,TRAIN)
             utils.model_mode(model_D,TRAIN)
             utils.model_mode(model_F,TRAIN)
-            visualizer.reset()              # reset the visualizer: make sure it saves the results to HTML at least once every epoch
+            visualizer.reset() # reset the visualizer: make sure it saves the results to HTML at least once every epoch
             iter_date_time = time.time()
 
             dataset_size = len(data_loader)
@@ -138,11 +139,14 @@ if __name__ == "__main__":
                 #Visualize(visdom)
                 total_iters = epoch * len(data_loader) + (i+1)
                 losses = {};  losses.update(G_losses);  losses.update(D_losses) 
-                visualizer.plot_current_losses(epoch, float(i) / len(data_loader), {k: v.item() for k, v in losses.items()})
-                if (total_iters % train_cfg.display_iter) == 0:
-                    current_visuals = {'real_img':inputs['Source'], 'fake_img':fake_img, 'style_img':inputs['Target'], 'recon_img':recon_img}
-                    visualizer.display_current_results(current_visuals, epoch,  (total_iters % train_cfg.save_img_iter == 0))
-
+                if (train_cfg.visualize.enabled):
+                    visualizer.plot_current_losses(epoch, float(i) / len(data_loader), {k: v.item() for k, v in losses.items()})
+                    if (total_iters % train_cfg.display_iter) == 0:
+                        current_visuals = {'real_img':inputs['Source'], 'fake_img':fake_img, 'style_img':inputs['Target'], 'recon_img':recon_img}
+                        visualizer.display_current_results(current_visuals, epoch,  (total_iters % train_cfg.save_img_iter == 0))
+                else:
+                    if (total_iters % train_cfg.visualize.print_freq) == 0: 
+                        visualizer.print_current_losses(epoch, i, losses, time.time() - iter_date_time, optimize_start_time - iter_date_time)   
                     # Save model & optimizer            
                 if (epoch % train_cfg.display_epoch) == 0:
                     utils.save_component(train_cfg.log_path, train_cfg.model_name, epoch, model_G, optimizer_G)
