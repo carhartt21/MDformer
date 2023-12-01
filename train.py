@@ -59,9 +59,9 @@ if __name__ == "__main__":
             print('Loading Adam optimizer')
             # optim_load_dict = torch.load(os.path.join(train_cfg.model.load_weight_path,'adam.pth'), map_location=device)
             # optim_load_dict = torch.load(os.path.join(train_cfg.model.weight_path,'adam.pth'), map_location=device)
-            optim_load_dict_g = torch.load(os.path.join(train_cfg.model.weight_path,'adam_g.pth'), map_location=device)
-            optim_load_dict_d = torch.load(os.path.join(train_cfg.model.weight_path,'adam_g.pth'), map_location=device)
-            optim_load_dict_f = torch.load(os.path.join(train_cfg.model.weight_path,'adam_g.pth'), map_location=device)
+            optim_load_dict_g = torch.load(os.path.join(train_cfg.model.weight_path,'adam_G.pth'), map_location=device)
+            optim_load_dict_d = torch.load(os.path.join(train_cfg.model.weight_path,'adam_G.pth'), map_location=device)
+            optim_load_dict_f = torch.load(os.path.join(train_cfg.model.weight_path,'adam_G.pth'), map_location=device)
             optimizer_G.load_state_dict(optim_load_dict_g)
             optimizer_D.load_state_dict(optim_load_dict_d)
             
