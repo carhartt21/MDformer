@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from blocks import ResBlk
+from . import blocks
 
 class StyleEncoder(nn.Module):
     def __init__(self, input_channels=3, generator_in_filters=64, style_dim=8, n_downsampling=2, no_antialias=False, num_domains=2):
@@ -55,7 +55,7 @@ class StyleEncoder_v2(nn.Module):
         repeat_num = int(np.log2(img_size)) - 2
         for _ in range(repeat_num):
             dim_out = min(dim_in*2, max_conv_dim)
-            blocks += [ResBlk(dim_in, dim_out, downsample=True)]
+            blocks += [blocks.ResBlk(dim_in, dim_out, downsample=True)]
             dim_in = dim_out
 
         blocks += [nn.LeakyReLU(0.2)]
