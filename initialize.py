@@ -30,25 +30,26 @@ def seed_everything(seed=42):
     torch.backends.cudnn.benchmark = False
     # print(f"seed : {seed}")
 
-def baseline_model_load(model_cfg, device):
+def build_model(model_cfg, device):
     model_G = {}
     parameter_G = []
     model_D = {}
     parameter_D = []
     model_F = {}
+    
+    model_G['ContentEncoder'] = networks.ContentEncoder(model_cfg.MODEL.input_nc, model_cfg.MODEL.ngf, model_cfg.MODEL.n_downsampling, model_cfg.MODEL.n_res, model_cfg.MODEL.content_dim, model_cfg.MODEL.norm, model_cfg.MODEL.activ, not model_cfg.MODEL.no_antialias)
+    model_G['StyleEncoder'] = networks.StyleEncoder(model_cfg.MODEL.input_nc, model_cfg.MODEL.ngf, model_cfg.MODEL.style_dim, model_cfg.MODEL.n_downsampling, model_cfg.MODEL.no_antialias, model_cfg.DATASET.num_domains)
+    model_G['Transformer'] = networks.Transformer_Aggregator(model_cfg.MODEL.img_size, model_cfg.MODEL.patch_size, model_cfg.MODEL.embed_C, model_cfg.MODEL.feat_C, model_cfg.MODEL.depth, model_cfg.MODEL.heads, model_cfg.MODEL.mlp_dim)
+    model_G['MLP_Adain'] = networks.MLP(model_cfg.MODEL.style_dim, model_cfg.MODEL.content_dim, model_cfg.MODEL.mlp_dim, 3, norm='none', activ='relu')
+    model_G['Generator'] = networks.Generator(model_cfg.MODEL.img_size, model_cfg.MODEL.patch_size, model_cfg.MODEL.embed_C, model_cfg.MODEL.feat_C, model_cfg.MODEL.depth, model_cfg.MODEL.heads, model_cfg.MODEL.mlp_dim, model_cfg.MODEL.num_domains, model_cfg.MODEL.style_dim, model_cfg.MODEL.content_dim, model_cfg.MODEL.norm, model_cfg.MODEL.activ, model_cfg.MODEL.pad_type, model_cfg.MODEL.res_norm, model_cfg.MODEL.dropout, model_cfg.MODEL.attn_dropout, model_cfg.MODEL.mlp_dropout, model_cfg.MODEL.no_antialias)
+    model_G['Mapping Network'] = networks.MappingNetwork(num_domains=2, style_dim=64, hidden_dim=1024, num_layers=3)
 
-    model_G['ContentEncoder'] = networks.ContentEncoder()
-    model_G['StyleEncoder'] = networks.StyleEncoder()
-    model_G['Transformer'] = networks.Transformer_Aggregator()
-    model_G['MLP_Adain'] = networks.MLP()
-    model_G['Generator'] = networks.Generator()
 
-    model_D['Discrim'] = networks.NLayerDiscriminator()
+    model_D['Discrim'] = networks.NLayerDiscriminator(model_cfg.MODEL.input_nc, model_cfg.MODEL.ndf, n_layers=3, norm='none', activ='lrelu', num_D=1)
 
-    model_F['MLP_head'] = networks.MLP_Head()
-    model_F['MLP_head_inst'] = networks.MLP_Head(nc=64)
+    model_F['MLP_head'] = networks.MLP_Head(model_cfg.MODEL.style_dim)
+    model_F['MLP_head_inst'] = networks.MLP_Head(model_cfg.MODEL.style_dim)
 
-    # model_M['Mapping Network'] = networks.MappingNetwork(num_domains=2, style_dim=64, hidden_dim=1024, num_layers=3)
 
     if model_cfg.load_weight:
         print("Loading Network weights")
