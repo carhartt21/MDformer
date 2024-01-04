@@ -24,8 +24,6 @@ from data_loader import MultiDomainDataset, InputFetcher, get_train_loader
 TRAIN = 1
 EVAL  = 0
 
-I2I = 1
-RECON = 0 
 
 parser = argparse.ArgumentParser(description='arguments yaml load')
 parser.add_argument("--conf",

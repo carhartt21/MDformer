@@ -11,34 +11,24 @@ RECON = 0
 
 ######################################### Forward #########################################
         
-def model_forward(inputs, model, num_box=-1, task=I2I, feat_layers=[]): #i2i==False: reconstruction task
+def model_forward(inputs, model, num_box=-1, feat_layers=[]):
     if task == I2I:
-        feat_content, features = model['ContentEncoder'](inputs['Source'], feat_layers)
-        rand_style = torch.randn(inputs['Source'].shape[0], 8, 1, 1).to(inputs['Source'].device)
-        utils.assign_adain_params(model['MLP_Adain'](rand_style), model['Transformer'].module.transformer.layers)
+        feat_content, features = model['ContentEncoder'](inputs.img, feat_layers)
+        rand_style = torch.randn(inputs.img.shape[0], 8, 1, 1).to(inputs.img.device)
+        utils.assign_adain_params(model['MLP_Adain'](rand_style), model['Transformer'].module.module.transformer.layers)
 
-        if 'A_box' in inputs:
-            features += [model['Transformer'].module.extract_box_feature(feat_content, inputs['A_box'], num_box)]
+        if 'BBox' in inputs:
+            features += [model['Transformer'].module.extract_box_feature(feat_content, inputs.BBox, num_box)]
         temp = features
 
         if num_box == -1:
             aggregated_feat, _ = model['Transformer'](feat_content)
         else:
-            aggregated_feat, aggregated_box = model['Transformer'](feat_content, inputs['A_box'], num_box)
+            aggregated_feat, aggregated_box = model['Transformer'](feat_content, inputs.BBox, num_box)
 
-    else:
-        feat_content, _ = model['ContentEncoder'](inputs['Target'])
-        style_code = model['StyleEncoder'](inputs['Target'])
-        utils.assign_adain_params(model['MLP_Adain'](style_code), model['Transformer'].module.transformer.layers)
-        temp = style_code
-
-        if num_box == -1:
-            aggregated_feat, _ = model['Transformer'](feat_content)
-        else:
-            aggregated_feat, aggregated_box = model['Transformer'](feat_content, inputs['B_box'], num_box)
 
     fake = model['Generator'](aggregated_feat)
-    fake_box = model['Generator'](aggregated_box, inputs['A_box']) if task == I2I and 'A_box' in inputs else None
+    fake_box = model['Generator'](aggregated_box, inputs['A_box']) if 'A_box' in inputs else None
     
     return fake, fake_box, temp
 
