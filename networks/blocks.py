@@ -432,8 +432,8 @@ to_2tuple = _ntuple(2)
 class PatchEmbedding(nn.Module):
     """ 2D Image to Patch Embedding. 
     Patch embedding layer used in Vision Transformer (https://arxiv.org/abs/2010.11929)
-    Possibly missing a layer norm.
     """
+
     def __init__(self, img_size=64, patch_size=8, in_chans=256, embed_dim=768, norm_layer=None, STEM=True):
         super().__init__()
         # image and patch size to tuple of 2 integers
@@ -466,6 +466,28 @@ class PatchEmbedding(nn.Module):
         #proj:120,1024,1,1  fl:120,1024,1 tr:120,1,1024
         x = self.norm(x)
         return x
+    
+class SemanticEmbedding(nn.Module):
+    def __init__(self, in_dim, img_size, patch_size, cls_labels, out_dim):
+        super().__init__()
+        img_size = to_2tuple(img_size)
+        patch_size = to_2tuple(patch_size)
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.fc = nn.Linear(in_dim, out_dim)
+        self.norm = LayerNorm(out_dim)
+        self.grid_size = (img_size[0] // patch_size[0], img_size[1] // patch_size[1])
+        self.num_patches = self.grid_size[0] * self.grid_size[1]        
+    
+    def forward(self, x):
+        x = self.fc(x)
+        x = self.norm(x)
+        return x
+
+    def create_embedded_token(self, x, c):
+        # Create an embedded token based on input tensor x and semantic class c
+        embedded_token = torch.cat((x, c), dim=1)
+        return embedded_token
 
 ####################################    Aggregator   ####################################
 
