@@ -75,17 +75,17 @@ class MLP_Head(nn.Module):
             #JB_EDIT
             try:
                 if len(feat.shape) == 4: #Conv 
-                    input_nc = feat.shape[1]
+                    input_channels = feat.shape[1]
                 else: #Attention 
-                    input_nc = feat.shape[2]
+                    input_channels = feat.shape[2]
             except:
                 feat = feat[0]
                 if len(feat.shape) == 4: #Conv 
-                    input_nc = feat.shape[1]
+                    input_channels = feat.shape[1]
                 else: #Attention 
-                    input_nc = feat.shape[2]
+                    input_channels = feat.shape[2]
                 
-            mlp = nn.Sequential(*[nn.Linear(input_nc, self.nc), nn.ReLU(), nn.Linear(self.nc, self.nc)])
+            mlp = nn.Sequential(*[nn.Linear(input_channels, self.nc), nn.ReLU(), nn.Linear(self.nc, self.nc)])
 
             
             mlp.to(device)
