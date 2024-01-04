@@ -76,6 +76,40 @@ def setup_logger(distributed_rank=0, filename="log.txt"):
 
     return logger    
 
+def label_to_onehot(gt, num_classes, ignore_index=-1):
+    '''
+    Converts segmentation label to one hot format
+    gt: ground truth label with size (N, H, W)
+    num_classes: number of classes
+    ignore_index: index(es) for ignored classes
+    '''
+    N, _, _ = gt.size()
+    gt_ = gt
+    gt_[gt_ == ignore_index] = num_classes
+    onehot = torch.zeros(N, gt_.size(1), gt_.size(2), num_classes + 1).cuda()
+    onehot = onehot.scatter_(-1, gt_.unsqueeze(-1), 1) 
+
+    return onehot.permute(0, 3, 1, 2)
+
+def onehot_to_class(onehot):
+    batch_size = onehot.squeeze().shape[0]
+    cls = torch.zeros(batch_size, dtype=torch.long)
+    if len(onehot.shape) > 1:
+        for i in range(onehot.shape[0]):
+            _cls = torch.nonzero((onehot[i] + 1))
+            if _cls.nelement() > 0:
+                cls[i] = _cls
+            else:
+                cls[i] = torch.tensor([-1])
+        return cls.cuda()
+    else:
+        _cls = torch.nonzero(onehot + 1)
+        if _cls.nelement() > 0:
+            cls = _cls
+        else:
+            cls = torch.tensor([-1])
+        return cls.cuda()
+
 def user_scattered_collate(batch):
     return batch
 
