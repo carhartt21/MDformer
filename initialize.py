@@ -30,25 +30,65 @@ def seed_everything(seed=42):
     torch.backends.cudnn.benchmark = False
     # print(f"seed : {seed}")
 
-def build_model(model_cfg, device):
+def build_model(model_cfg, device, num_domains=8, distributed=False):
+    
+    if distributed:
+        print("Distributed Training")
+        torch.cuda.set_device(model_cfg.gpu_ids[0])
+        dist.init_process_group(backend='nccl', init_method='env://')
+        device = torch.device('cuda:{}'.format(model_cfg.gpu_ids[0])) if model_cfg.gpu_ids else torch.device('cpu')
+        print(f"device : {device}")
+        print(f"model_cfg.gpu_ids : {model_cfg.gpu_ids}")
+
     model_G = {}
     parameter_G = []
     model_D = {}
     parameter_D = []
     model_F = {}
     
-    model_G['ContentEncoder'] = networks.ContentEncoder(model_cfg.MODEL.input_nc, model_cfg.MODEL.ngf, model_cfg.MODEL.n_downsampling, model_cfg.MODEL.n_res, model_cfg.MODEL.content_dim, model_cfg.MODEL.norm, model_cfg.MODEL.activ, not model_cfg.MODEL.no_antialias)
-    model_G['StyleEncoder'] = networks.StyleEncoder(model_cfg.MODEL.input_nc, model_cfg.MODEL.ngf, model_cfg.MODEL.style_dim, model_cfg.MODEL.n_downsampling, model_cfg.MODEL.no_antialias, model_cfg.DATASET.num_domains)
-    model_G['Transformer'] = networks.Transformer_Aggregator(model_cfg.MODEL.img_size, model_cfg.MODEL.patch_size, model_cfg.MODEL.embed_C, model_cfg.MODEL.feat_C, model_cfg.MODEL.depth, model_cfg.MODEL.heads, model_cfg.MODEL.mlp_dim)
-    model_G['MLP_Adain'] = networks.MLP(model_cfg.MODEL.style_dim, model_cfg.MODEL.content_dim, model_cfg.MODEL.mlp_dim, 3, norm='none', activ='relu')
-    model_G['Generator'] = networks.Generator(model_cfg.MODEL.img_size, model_cfg.MODEL.patch_size, model_cfg.MODEL.embed_C, model_cfg.MODEL.feat_C, model_cfg.MODEL.depth, model_cfg.MODEL.heads, model_cfg.MODEL.mlp_dim, model_cfg.MODEL.num_domains, model_cfg.MODEL.style_dim, model_cfg.MODEL.content_dim, model_cfg.MODEL.norm, model_cfg.MODEL.activ, model_cfg.MODEL.pad_type, model_cfg.MODEL.res_norm, model_cfg.MODEL.dropout, model_cfg.MODEL.attn_dropout, model_cfg.MODEL.mlp_dropout, model_cfg.MODEL.no_antialias)
-    model_G['Mapping Network'] = networks.MappingNetwork(num_domains=2, style_dim=64, hidden_dim=1024, num_layers=3)
+    model_G['ContentEncoder'] = nn.DataParallel(networks.ContentEncoder(input_channels=model_cfg.in_channels,))
+    
+    model_G['StyleEncoder'] = nn.DataParallel(networks.StyleEncoder(input_channels=model_cfg.in_channels, 
+                                                    generator_in_filters=model_cfg.TRANSFORMER.generator_in_filters, 
+                                                    style_dim=model_cfg.style_dim, 
+                                                    num_domains= num_domains))
+    
+    model_G['Transformer'] = nn.DataParallel(networks.Transformer_Aggregator(img_size=model_cfg.img_size, 
+                                                             patch_size=model_cfg.patch_size, 
+                                                             embed_C=model_cfg.TRANSFORMER.embed_C, 
+                                                             feat_C=model_cfg.TRANSFORMER.feat_C, 
+                                                             depth=model_cfg.TRANSFORMER.depth, 
+                                                             heads=model_cfg.TRANSFORMER.heads, 
+                                                             mlp_dim=model_cfg.TRANSFORMER.mlp_dim))
+    
+    model_G['MLP_Adain'] = nn.DataParallel(networks.MLP(style_dim=model_cfg.style_dim, 
+                                        conten_dim=model_cfg.content_dim, 
+                                        mlp_dim=model_cfg.TRANSFORMER.mlp_dim, 
+                                        n_blk=3, 
+                                        norm='none', 
+                                        activ='relu'))
+    
+    model_G['Generator'] = nn.DataParallel(networks.Generator(img_size=model_cfg.img_size, 
+                                              patch_size=model_cfg.patch_size, 
+                                              embed_C=model_cfg.TRANSFORMER.embed_C, 
+                                              feat_C=model_cfg.TRANSFORMER.feat_C, 
+                                              depth=model_cfg.TRANSFORMER.depth, 
+                                              heads=model_cfg.TRANSFORMER.heads, 
+                                              mlp_dim=model_cfg.TRANSFORMER.mlp_dim, 
+                                              num_domains=model_cfg.DATASET.num_domains, 
+                                              style_dim=model_cfg.style_dim, 
+                                              content_dim=model_cfg.content_dim))
+    
+    model_G['Mapping Network'] = nn.DataParallel(networks.MappingNetwork(num_domains=model_cfg.DATASET.num_domains, 
+                                                         style_dim=model_cfg.style_dim, 
+                                                         hidden_dim=model_cfg.hidden_dim, 
+                                                         num_layers=3))
+    
 
+    model_D['Discrim'] = nn.DataParallel(networks.NLayerDiscriminator(input=model_cfg.input_channels))
 
-    model_D['Discrim'] = networks.NLayerDiscriminator(model_cfg.MODEL.input_nc, model_cfg.MODEL.ndf, n_layers=3, norm='none', activ='lrelu', num_D=1)
-
-    model_F['MLP_head'] = networks.MLP_Head(model_cfg.MODEL.style_dim)
-    model_F['MLP_head_inst'] = networks.MLP_Head(model_cfg.MODEL.style_dim)
+    model_F['MLP_head'] = nn.DataParallel(networks.MLP_Head())
+    model_F['MLP_head_inst'] = nn.DataParallel(networks.MLP_Head())
 
 
     if model_cfg.load_weight:
