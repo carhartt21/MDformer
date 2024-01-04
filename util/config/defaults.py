@@ -20,9 +20,9 @@ _C.DATASET.root_dataset = "./data/"
 _C.DATASET.list_train = "./data/training.odgt"
 _C.DATASET.list_val = "./data/validation.odgt"
 # number of semantic classes 
-_C.DATASET.num_seg_class = 150
+_C.DATASET.num_seg_class = 16
 # number of domains
-_C.DATASET.num_domain = (3, 3, 3)
+_C.DATASET.num_domains = 8
 # TODO change from width and height
 # maximum number of images per folder
 _C.DATASET.max_dataset_size = 200000
@@ -47,6 +47,8 @@ _C.MODEL.load_optimizer = False
 _C.MODEL.weight_path = ""
 # weights to finetune net_decoder
 # _C.MODEL.weights_decoder = ""
+# number of input channels
+_C.MODEL.in_channels = 3
 # number of feature channels between encoder and decoder
 _C.MODEL.fc_dim = 2048
 # feature layers for NCE loss
@@ -54,13 +56,37 @@ _C.MODEL.feat_layers = [0, 4, 8]
 # number of patches
 _C.MODEL.num_patches = 256
 # patch size
-_C.MODEL.patch_size = 1
+_C.MODEL.patch_size = 8
 # number of negative samples for NCE loss
 _C.MODEL.num_neg = 64
 # number of positive samples for NCE loss
 _C.MODEL.num_pos = 1
 # input image size
-_C.MODEL.imgSize = (352, 352)
+_C.MODEL.img_size = (352, 352)
+# Style code dimension
+_C.MODEL.style_dim = 64
+# Latent code dimension
+_C.MODEL.latent_dim = 16
+# Mapping Network hidden dimension
+_C.MODEL.hidden_dim = 1024
+# number of content channels
+_C.MODEL.content_dim = 256
+# ------------------------------------------------------------------------------
+# Transformer parameters
+# ------------------------------------------------------------------------------
+_C.MODEL.TRANSFORMER = CN()
+# number of input channels of the transformer
+_C.MODEL.TRANSFORMER.embed_C = 1024
+# number of feature channels of the transformer
+_C.MODEL.TRANSFORMER.feat_C = 256
+# number of transformer layers
+_C.MODEL.TRANSFORMER.depth = 6
+# number of heads in each transformer layer
+_C.MODEL.TRANSFORMER.heads = 4
+# dimension of each head
+_C.MODEL.TRANSFORMER.mlp_dim = 4096
+# number of input filters of the generator
+_C.MODEL.TRANSFORMER.generator_in_filters = 64
 
 
 
@@ -68,6 +94,8 @@ _C.MODEL.imgSize = (352, 352)
 # Training
 # -----------------------------------------------------------------------------
 _C.TRAIN = CN()
+# pretrain the classifier
+_C.TRAIN.pretrain = False
 # seed to sample training images
 _C.TRAIN.seed_train = 304
 # batch size per gpu
@@ -85,7 +113,6 @@ _C.TRAIN.epoch_iters = 5000
 # optimizer
 _C.TRAIN.optim = "Adam"
 # momentum terms for Adam optimizer
-# TODO change from beta1, beta2 
 _C.TRAIN.optim_beta = (0.5, 0.999)
 # learning rate
 _C.TRAIN.lr = 0.02
@@ -109,6 +136,7 @@ _C.TRAIN.w_Recon = 10.0
 _C.TRAIN.w_Style = 10.0
 _C.TRAIN.w_NCE = 2.0
 _C.TRAIN.w_Instance_NCE = 2.0
+_C.TRAIN.w_Cycle = 2.0
 
 # frequency to save checkpoints 
 _C.TRAIN.save_epoch = 5
@@ -126,6 +154,9 @@ _C.TRAIN.use_cuda = True
 _C.TRAIN.gpu_ids = [0]
 # output path for log, weights and intermediate results
 _C.TRAIN.log_path = "./weights"
+# distributed training
+_C.TRAIN.distributed = False
+
 # ------------------------------------------------------------------------------
 # preprocessing options
 # ------------------------------------------------------------------------------
