@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from . import blocks
 
 class Generator(nn.Module):
-    def __init__(self, img_size=88, patch_size=8, embed_C=1024, feat_C=256, ngf=64, n_downsampling=2, use_bias=True):
+    def __init__(self, img_size=88, patch_size=8, embed_C=1024, feat_C=256, generator_in_filters=64, n_downsampling=2, use_bias=True):
         super(Generator, self).__init__()
         
 
@@ -23,16 +23,16 @@ class Generator(nn.Module):
         model = []
         for i in range(n_downsampling):  # add upsampling layers
             mult = 2 ** (n_downsampling - i)
-            model += [blocks.Upsample(ngf * mult),
-                    nn.Conv2d(ngf * mult, int(ngf * mult / 2),
+            model += [blocks.Upsample(generator_in_filters * mult),
+                    nn.Conv2d(generator_in_filters * mult, int(generator_in_filters * mult / 2),
                                 kernel_size=3, stride=1,
                                 padding=1,  # output_padding=1,
                                 bias=use_bias),
-                    nn.InstanceNorm2d(int(ngf * mult / 2)),
+                    nn.InstanceNorm2d(int(generator_in_filters * mult / 2)),
                     nn.ReLU(True)]
 
         model += [nn.ReflectionPad2d(3)]
-        model += [nn.Conv2d(ngf, 3, kernel_size=7, padding=0)]
+        model += [nn.Conv2d(generator_in_filters, 3, kernel_size=7, padding=0)]
         model += [nn.Tanh()]
 
         self.model = nn.Sequential(*model)
