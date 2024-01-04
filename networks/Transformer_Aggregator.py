@@ -68,11 +68,16 @@ class Transformer_Aggregator(nn.Module):
             img_size=img_size, patch_size=patch_size, in_chans=feat_C, embed_dim= embed_C)
         self.box_embed = blocks.PatchEmbedding(
             img_size=patch_size, patch_size=patch_size, in_chans=feat_C, embed_dim= embed_C)
+        
+        # semantic embedding
+        self.sem_embed = blocks.SemanticEmbedding(feat_C, embed_C)
 
         self.pos_embed_x = blocks.PositionalEncoding(d_model=embed_C//4, dropout=0., max_len=img_size)
         self.pos_embed_y = blocks.PositionalEncoding(d_model=embed_C//4, dropout=0., max_len=img_size)
         self.pos_embed_h = blocks.PositionalEncoding(d_model=embed_C//4, dropout=0., max_len=img_size)
-        self.pos_embed_w = blocks.PositionalEncoding(d_model=embed_C//4, dropout=0., max_len=img_size)        
+        self.pos_embed_w = blocks.PositionalEncoding(d_model=embed_C//4, dropout=0., max_len=img_size)
+
+
         # position embedding for box with center coordinates x, y, width w and height h
         pos_embed = torch.cat((
                 self.pos_embed_x()[..., None, :].repeat(1, 1, img_size, 1), # 
@@ -123,8 +128,11 @@ class Transformer_Aggregator(nn.Module):
         
         return added_out
 
-    def forward(self, x, box_info=None, num_box=-1):
-        embed_x = self.patch_embed(x) + self.pos_embed.to(x.device)
+    def forward(self, x, semantic_embed = False, box_info=None, num_box=-1):
+        if semantic_embed:
+            embed_x = self.patch_embed(x) + self.pos_embed.to(x.device) + self.sem_embed(x)
+        else:
+            embed_x = self.patch_embed(x) + self.pos_embed.to(x.device)
         
         if box_info != None:
             box_feat = self.extract_box_feature(x, box_info, num_box)
