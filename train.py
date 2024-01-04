@@ -19,6 +19,7 @@ from collections import OrderedDict
 from data import create_dataset
 from util.config import cfg
 
+from data_loader import MultiDomainDataset, InputFetcher, get_train_loader
 
 TRAIN = 1
 EVAL  = 0
@@ -75,7 +76,8 @@ if __name__ == "__main__":
     initialize.seed_everything(cfg.TRAIN.seed)
 
     # data loader
-    data_loader = create_dataset(cfg)  # create a dataset given opt.dataset_mode and other options
+    # continue here
+    data_loader = get_train_loader(root='', which=cfg.DATASET.mode, img_size=cfg.MODEL.img_size, batch_size=cfg.TRAIN.batch_size_per_gpu, train_dirs=cfg.TRAIN.train_dirs)  # create a dataset given opt.dataset_mode and other options
     
     #model_load
     model_G, parameter_G, model_D, parameter_D, model_F = initialize.build_model(cfg.MODEL, device, cfg.DATASET.num_domains, cfg.TRAIN.distributed)
@@ -119,8 +121,11 @@ if __name__ == "__main__":
             box_feature = torch.empty(1).to(device)  
             # print('inputs  {} {}'.format(len(inputs), inputs))
             # inputs = inputs[0]
-            inputs['Source'] = inputs['Source'].to(device)
-            inputs['Target'] = inputs['Target'].to(device)
+            inputs.img = inputs.img.to(device)
+            inputs.seg_mask = inputs.seg_mask.to(device)
+            inputs.domain = inputs.domain.to(device)
+
+            print('inputs  {} {}'.format(len(inputs), inputs))
 
             # Model Forward
             fake_img, fake_box, features = loss.model_forward(inputs, model_G, cfg.DATASET.num_box, I2I, cfg.MODEL.feat_layers)
