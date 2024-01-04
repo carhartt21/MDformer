@@ -5,30 +5,32 @@ import torch.nn.functional as F
 from . import blocks
 
 class ContentEncoder(nn.Module):
-    def __init__(self, input_nc=3, ngf=64, n_downsampling = 2, no_antialias=False):
-        #ngf = 64 number of generator filters in first conv layer
-        #input_nc = 3 number of input channels
-        #n_downsampling = 2 number of downsampling layers
-        #no_antialias = False use antialiasing in downsampling layers
+    def __init__(self, input_channels=3, generator_in_filters=64, n_downsampling = 2, no_antialias=False):
+        """
+        generator_in_filters = 64 number of generator filters in first conv layer
+        input_channels = 3 number of input channels
+        n_downsampling = 2 number of downsampling layers
+        no_antialias = False use antialiasing in downsampling layers
+        """
         
         super(ContentEncoder, self).__init__()
         
         model = [nn.ReflectionPad2d(3),
-                    nn.Conv2d(input_nc, ngf, kernel_size=7, padding=0, bias=True),
-                    nn.InstanceNorm2d(ngf),
+                    nn.Conv2d(input_channels, generator_in_filters, kernel_size=7, padding=0, bias=True),
+                    nn.InstanceNorm2d(generator_in_filters),
                     nn.ReLU(True)]
 
         for i in range(n_downsampling):  # add downsampling layers
             mult = 2 ** i
             if(no_antialias):
-                model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=2, padding=1, bias=True),
-                        nn.InstanceNorm2d(ngf * mult * 2),
+                model += [nn.Conv2d(generator_in_filters * mult, generator_in_filters * mult * 2, kernel_size=3, stride=2, padding=1, bias=True),
+                        nn.InstanceNorm2d(generator_in_filters * mult * 2),
                         nn.ReLU(True)]
             else:
-                model += [nn.Conv2d(ngf * mult, ngf * mult * 2, kernel_size=3, stride=1, padding=1, bias=True),
-                        nn.InstanceNorm2d(ngf * mult * 2),
+                model += [nn.Conv2d(generator_in_filters * mult, generator_in_filters * mult * 2, kernel_size=3, stride=1, padding=1, bias=True),
+                        nn.InstanceNorm2d(generator_in_filters * mult * 2),
                         nn.ReLU(True),
-                        blocks.Downsample(ngf * mult * 2)]
+                        blocks.Downsample(generator_in_filters * mult * 2)]
 
         self.model = nn.Sequential(*model)
 
