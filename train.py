@@ -78,7 +78,7 @@ if __name__ == "__main__":
     data_loader = create_dataset(cfg)  # create a dataset given opt.dataset_mode and other options
     
     #model_load
-    model_G, parameter_G, model_D, parameter_D, model_F = initialize.build_model(cfg.MODEL, device)
+    model_G, parameter_G, model_D, parameter_D, model_F = initialize.build_model(cfg.MODEL, device, cfg.DATASET.num_domains, cfg.TRAIN.distributed)
 
     # optimizer & scheduler
     optimizer_G = optim.Adam(parameter_G, float(cfg.TRAIN.lr_generator),betas=cfg.TRAIN.optim_beta)
