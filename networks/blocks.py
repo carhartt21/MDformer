@@ -434,15 +434,15 @@ class PatchEmbedding(nn.Module):
     Patch embedding layer used in Vision Transformer (https://arxiv.org/abs/2010.11929)
     """
 
-    def __init__(self, img_size=64, patch_size=8, in_chans=256, embed_dim=768, norm_layer=None, STEM=True):
+    def __init__(self, input_size=64, patch_size=8, in_chans=256, embed_dim=768, norm_layer=None, STEM=True):
         super().__init__()
         # image and patch size to tuple of 2 integers
-        img_size = to_2tuple(img_size)
+        input_size = to_2tuple(input_size)
         patch_size = to_2tuple(patch_size)
-        self.img_size = img_size
+        self.input_size = input_size
         self.patch_size = patch_size
         # grid size is the number of patches in the image
-        self.grid_size = (img_size[0] // patch_size[0], img_size[1] // patch_size[1])
+        self.grid_size = (input_size[0] // patch_size[0], input_size[1] // patch_size[1])
         self.num_patches = self.grid_size[0] * self.grid_size[1]
 
         # if STEM is true, we use a stem conv layer to project the input image to a feature map of size embed_dim
@@ -459,24 +459,24 @@ class PatchEmbedding(nn.Module):
         self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
 
     def forward(self, x): #x: b*2,256,64,64 / b*2*30,256,8,8
-        B, C, H, W = x.shape
-        assert H == self.img_size[0] and W == self.img_size[1], \
-            "Input image size ({}*{}) doesn't match model ({}*{})".format(H, W, self.img_size[0], self.img_size[1])
+        _, _, H, W = x.shape
+        assert H == self.input_size[0] and W == self.input_size[1], \
+            "Input image size ({}*{}) doesn't match model ({}*{})".format(H, W, self.input_size[0], self.input_size[1])
         x = self.proj(x).flatten(2).transpose(1, 2) #proj:4,1024,8,8 #fl:4,1024,64
         #proj:120,1024,1,1  fl:120,1024,1 tr:120,1,1024
         x = self.norm(x)
         return x
     
 class SemanticEmbedding(nn.Module):
-    def __init__(self, in_dim, img_size, patch_size, cls_labels, out_dim):
+    def __init__(self, in_dim: int=64, input_size: int = 88, patch_size: int = 8, cls_labels: list=[], out_dim: int=256):
         super().__init__()
-        img_size = to_2tuple(img_size)
+        input_size = to_2tuple(input_size)
         patch_size = to_2tuple(patch_size)
-        self.img_size = img_size
+        self.input_size = input_size
         self.patch_size = patch_size
         self.fc = nn.Linear(in_dim, out_dim)
         self.norm = LayerNorm(out_dim)
-        self.grid_size = (img_size[0] // patch_size[0], img_size[1] // patch_size[1])
+        self.grid_size = (input_size[0] // patch_size[0], input_size[1] // patch_size[1])
         self.num_patches = self.grid_size[0] * self.grid_size[1]        
     
     def forward(self, x):
