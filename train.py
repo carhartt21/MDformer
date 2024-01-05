@@ -71,7 +71,7 @@ if __name__ == "__main__":
     device = torch.device('cuda:{}'.format(cfg.TRAIN.gpu_ids[0])) if cfg.TRAIN.gpu_ids else torch.device('cpu')        
 
     # seed 
-    initialize.seed_everything(cfg.TRAIN.seed)
+    initialize.set_seed(cfg.TRAIN.seed)
 
     # data loader
     # continue here
@@ -98,7 +98,7 @@ if __name__ == "__main__":
         lr_scheduler_G = optim.lr_scheduler.StepLR(optimizer_G, cfg.TRAIN.scheduler_step_size, 0.1)
         lr_scheduler_D = optim.lr_scheduler.StepLR(optimizer_D, cfg.TRAIN.scheduler_step_size, 0.1)
 
-    criterions = initialize.criterion_set(cfg, device)
+    criterions = initialize.set_criterions(cfg, device)
 
     visualizer = Visualizer(cfg.MODEL.name, cfg.TRAIN.log_path, cfg.VISDOM)
 
@@ -123,20 +123,23 @@ if __name__ == "__main__":
             inputs.seg_mask = inputs.seg_mask.to(device)
             inputs.domain = inputs.domain.to(device)
 
-            print('inputs  {} {}'.format(len(inputs), inputs))
 
             # Model Forward
-            fake_img, fake_box, features = loss.model_forward(inputs, model_G, cfg.DATASET.num_box, I2I, cfg.MODEL.feat_layers)
-            recon_img, _, style_code = loss.model_forward(inputs, model_G, cfg.DATASET.num_box, RECON)
-            if cfg.DATASET.num_box > 0 and len(features) > len(cfg.MODEL.feat_layers):
+            fake_img, fake_box, features = loss.model_forward_generation(inputs=inputs, model=model_G, n_bbox=cfg.DATASET.n_bbox, recon=False, feat_layers=cfg.MODEL.feat_layers)
+            if cfg.TRAIN.w_Div > 0.0:
+                fake_img_2, _, _ = loss.model_forward_generation(inputs=inputs, model=model_G,feat_layers=cfg.MODEL.feat_layers)
+            else:
+                fake_img_2 = torch.empty(1).to(device)
+            recon_img, style_code = loss.model_forward_reconstruction(fake_image=fake_img, model=model_G, source_domain=inputs.source_domain, feat_layers=cfg.MODEL.feat_layers)
+            if cfg.DATASET.n_bbox > 0 and len(features) > len(cfg.MODEL.feat_layers):
                 features, box_feature =  features[:-1], features[-1]
 
             # MLP_initialize
-            if epoch == 0 and i ==0 and (cfg.TRAIN.w_NCE != 0.0  or (cfg.TRAIN.w_Instance_NCE != 0.0 and cfg.TRAIN.data.num_box > 0)):
+            if epoch == 0 and i ==0 and (cfg.TRAIN.w_NCE != 0.0  or (cfg.TRAIN.w_Instance_NCE != 0.0 and cfg.TRAIN.data.n_bbox > 0)):
                 if cfg.TRAIN.w_NCE != 0.0:
-                    model_F['MLP_head'].module.create_mlp(features, device)
-                if (cfg.TRAIN.w_Instance_NCE != 0.0 and cfg.DATASET.num_box > 0):
-                    model_F['MLP_head_inst'].create_mlp([box_feature], device)
+                    model_F['MLP_head'].module.create_mlp(features=features, device=device)
+                if (cfg.TRAIN.w_Instance_NCE != 0.0 and cfg.DATASET.n_bbox > 0):
+                    model_F['MLP_head_inst'].create_mlp(box_feature=[box_feature], device=device)
 
                 parameter_F = []
                 for key, val in model_F.items():
@@ -144,7 +147,7 @@ if __name__ == "__main__":
                     # model_F[key].to(device)
                     model_F[key].train()
                     parameter_F += list(val.parameters())
-                optimizer_F = optim.Adam(parameter_F, float(cfg.TRAIN.lr))
+                optimizer_F = optim.Adam(parameter_F, lr=float(cfg.TRAIN.lr))
 
             #Backward & Optimizer
             optimize_start_time = time.time() 
@@ -152,7 +155,7 @@ if __name__ == "__main__":
             #Discriminator  
             utils.set_requires_grad(model_D['Discrim'].module, True)
             optimizer_D.zero_grad()
-            total_D_loss, D_losses = loss.compute_D_loss(inputs, fake_img, model_D, criterions)
+            total_D_loss, D_losses = loss.compute_D_loss(inputs=inputs, fake_img=fake_img, model_D=model_D, criterions=criterions)
             total_D_loss.backward()
             optimizer_D.step()
 
