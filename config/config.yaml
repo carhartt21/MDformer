@@ -29,19 +29,19 @@ MODEL:
   weight_path: None # if training from scratch, set this as None
   feat_layers: [0,4,8] # compute NCE loss on which layers
   num_patches: 256 # number of patches per layer
-  patch_size: 1 # patch size
+  patch_size: 8 # patch size
   num_neg: 64 # number of negative samples
   num_pos: 1 # number of positive samples
-  imgSize: (352, 352) # scale images to this size
+  img_size: (352, 352) # scale images to this size
 
 
 
 DATASET:
   name: 'init'
-  dataset_mode: 'unaligned' # specifies how datasets are loaded. [unaligned | aligned | single | colorization]')
+  mode: 'multi' # specifies how datasets are loaded. [unaligned | aligned | single | colorization]')
   dir_A: 'dataset/sunny_warm' # path of dataset_A
   dir_B: 'dataset/snow_cold' # path of dataset_A
-  num_box: -1 # # box
+  n_bbox: -1 # # box
   max_dataset_size: 20000 # Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.
   
 

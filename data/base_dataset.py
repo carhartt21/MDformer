@@ -86,7 +86,7 @@ def get_transform(cfg, params=None, method=Image.BICUBIC, convert=True):
     if cfg_train.preprocess.grayscale:
         transform_list.append(transforms.Grayscale(1))
     if cfg_train.preprocess.resize:
-        transform_list.append(transforms.Resize(cfg.MODEL.imgSize, method))
+        transform_list.append(transforms.Resize(cfg.MODEL.img_size, method))
     
     if cfg_train.preprocess.scale_width:
         transform_list.append(transforms.Lambda(lambda img: __scale_width(img, cfg_train.load_size, cfg_train.crop_size, method)))

@@ -9,5 +9,5 @@ Test:
       dataset: 'init'
       height: 352 # scale images to this size
       width: 352 # scale images to this size
-      num_box: -1 # not loading gt box
+      n_bbox: -1 # not loading gt box
       max_dataset_size: -1

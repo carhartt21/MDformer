@@ -36,12 +36,12 @@ Train:
 
   data:
     dataset: 'init'
-    dataset_mode: 'unaligned' # specifies how datasets are loaded. [unaligned | aligned | single | colorization]')
+    dataset_mode: 'multi' # specifies how datasets are loaded. [unaligned | aligned | single | colorization]')
     dir_A: 'dataset/sunny_warm' # path of dataset_A
     dir_B: 'dataset/snow_cold' # path of dataset_A
     height: 352 # scale images to this size
     width: 352 # scale images to this size
-    num_box: -1 # # box
+    n_bbox: -1 # # box
     max_dataset_size: 20000 # Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.
     
 
