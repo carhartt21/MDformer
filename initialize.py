@@ -46,14 +46,14 @@ def build_model(model_cfg, device, num_domains=8, distributed=False):
     parameter_D = []
     model_F = {}
     
-    model_G['ContentEncoder'] = nn.DataParallel(networks.ContentEncoder(input_channels=model_cfg.in_channels,))
+    model_G['ContentEncoder'] = nn.DataParallel(networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling))
     
     model_G['StyleEncoder'] = nn.DataParallel(networks.StyleEncoder(input_channels=model_cfg.in_channels, 
-                                                    generator_in_filters=model_cfg.TRANSFORMER.generator_in_filters, 
+                                                    n_generator_filters=model_cfg.n_generator_filters, 
                                                     style_dim=model_cfg.style_dim, 
                                                     num_domains= num_domains))
     
-    model_G['Transformer'] = nn.DataParallel(networks.Transformer_Aggregator(img_size=model_cfg.img_size, 
+    model_G['Transformer'] = nn.DataParallel(networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
                                                              patch_size=model_cfg.patch_size, 
                                                              embed_C=model_cfg.TRANSFORMER.embed_C, 
                                                              feat_C=model_cfg.TRANSFORMER.feat_C, 
@@ -61,31 +61,22 @@ def build_model(model_cfg, device, num_domains=8, distributed=False):
                                                              heads=model_cfg.TRANSFORMER.heads, 
                                                              mlp_dim=model_cfg.TRANSFORMER.mlp_dim))
     
-    model_G['MLP_Adain'] = nn.DataParallel(networks.MLP(style_dim=model_cfg.style_dim, 
-                                        conten_dim=model_cfg.content_dim, 
-                                        mlp_dim=model_cfg.TRANSFORMER.mlp_dim, 
-                                        n_blk=3, 
-                                        norm='none', 
-                                        activ='relu'))
+    model_G['MLP_Adain'] = nn.DataParallel(networks.MLP())
     
-    model_G['Generator'] = nn.DataParallel(networks.Generator(img_size=model_cfg.img_size, 
+    model_G['Generator'] = nn.DataParallel(networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
                                               patch_size=model_cfg.patch_size, 
                                               embed_C=model_cfg.TRANSFORMER.embed_C, 
                                               feat_C=model_cfg.TRANSFORMER.feat_C, 
-                                              depth=model_cfg.TRANSFORMER.depth, 
-                                              heads=model_cfg.TRANSFORMER.heads, 
-                                              mlp_dim=model_cfg.TRANSFORMER.mlp_dim, 
-                                              num_domains=model_cfg.DATASET.num_domains, 
-                                              style_dim=model_cfg.style_dim, 
-                                              content_dim=model_cfg.content_dim))
+                                              n_generator_filters=model_cfg.n_generator_filters,
+                                              n_downsampling=model_cfg.n_downsampling,
+                                              ))
     
-    model_G['Mapping Network'] = nn.DataParallel(networks.MappingNetwork(num_domains=model_cfg.DATASET.num_domains, 
-                                                         style_dim=model_cfg.style_dim, 
-                                                         hidden_dim=model_cfg.hidden_dim, 
-                                                         num_layers=3))
+    model_G['Mapping Network'] = nn.DataParallel(networks.MappingNetwork(num_domains=num_domains, 
+                                                            latent_dim=model_cfg.latent_dim,
+                                                            style_dim=model_cfg.style_dim))
     
 
-    model_D['Discrim'] = nn.DataParallel(networks.NLayerDiscriminator(input=model_cfg.input_channels))
+    model_D['Discrim'] = nn.DataParallel(networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3))
 
     model_F['MLP_head'] = nn.DataParallel(networks.MLP_Head())
     model_F['MLP_head_inst'] = nn.DataParallel(networks.MLP_Head())
@@ -167,7 +158,9 @@ def criterion_set(cfg, device):
     criterions['GAN'] = utils.GANLoss().to(device)
     criterions['Idt'] = torch.nn.L1Loss().to(device)
     criterions['NCE'] = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu).to(device)
-    criterions['InstNCE'] = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu * cfg.DATASET.num_box).to(device)
+    criterions['InstNCE'] = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu * cfg.DATASET.n_bbox).to(device)
+    criterions['Style_Div'] = utils.Style_Div_Loss().to(device)
+    criterions['Cycle'] = torch.nn.L1Loss().to(device)
     return criterions
 
 def criterion_test(cfg, device):
@@ -175,5 +168,7 @@ def criterion_test(cfg, device):
     criterions['GAN'] = utils.GANLoss().to(device)
     criterions['Idt'] = torch.nn.L1Loss().to(device)
     criterions['NCE'] = utils.PatchNCELoss(cfg.TEST.batch_size).to(device)
-    criterions['InstNCE'] = utils.PatchNCELoss(cfg.TEST.batch_size * cfg.DATASET.num_box).to(device)
+    criterions['InstNCE'] = utils.PatchNCELoss(cfg.TEST.batch_size * cfg.DATASET.n_bbox).to(device)
+    criterions['Style_Div'] = torch.nn.L1Loss().to(device)
+    criterions['Cycle'] = torch.nn.L1Loss().to(device)
     return criterions

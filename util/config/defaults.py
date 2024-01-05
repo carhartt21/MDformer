@@ -13,8 +13,8 @@ _C.DIR = "./weights"
 # dataset name
 _C.DATASET = CN()
 _C.DATASET.name = 'OUTSIDE'
-# dataset mode (e.g., single, aligned, unaligned)
-_C.DATASET.dataset_mode = "unaligned"
+# dataset mode (e.g., single, aligned, unaligned, multi)
+_C.DATASET.mode = "multi"
 # path to images (should have subfolders trainA, trainB, valA, valB, etc)
 _C.DATASET.root_dataset = "./data/"
 _C.DATASET.list_train = "./data/training.odgt"
@@ -27,7 +27,7 @@ _C.DATASET.num_domains = 8
 # maximum number of images per folder
 _C.DATASET.max_dataset_size = 200000
 # number of object boxes per image
-_C.DATASET.num_box = -1
+_C.DATASET.n_bbox = -1
 # enable random flip during training
 _C.DATASET.random_flip = True
 _C.DATASET.dir_A = "./data/trainA"
@@ -71,6 +71,12 @@ _C.MODEL.latent_dim = 16
 _C.MODEL.hidden_dim = 1024
 # number of content channels
 _C.MODEL.content_dim = 256
+# number of downsampling layers in the content encoder
+_C.MODEL.n_downsampling = 2
+# number of input filters of the generator
+_C.MODEL.n_generator_filters = 64
+# number of discriminator filters
+_C.MODEL.n_discriminator_filters = 64
 # ------------------------------------------------------------------------------
 # Transformer parameters
 # ------------------------------------------------------------------------------
@@ -85,8 +91,6 @@ _C.MODEL.TRANSFORMER.depth = 6
 _C.MODEL.TRANSFORMER.heads = 4
 # dimension of each head
 _C.MODEL.TRANSFORMER.mlp_dim = 4096
-# number of input filters of the generator
-_C.MODEL.TRANSFORMER.generator_in_filters = 64
 
 
 
@@ -94,6 +98,8 @@ _C.MODEL.TRANSFORMER.generator_in_filters = 64
 # Training
 # -----------------------------------------------------------------------------
 _C.TRAIN = CN()
+# txt file containing training image folder patch_size
+_C.TRAIN.train_dirs = "train_dirs.txt"
 # pretrain the classifier
 _C.TRAIN.pretrain = False
 # seed to sample training images
@@ -134,6 +140,7 @@ _C.TRAIN.workers = 16
 _C.TRAIN.w_GAN = 1.0
 _C.TRAIN.w_Recon = 10.0
 _C.TRAIN.w_Style = 10.0
+_C.TRAIN.w_Style_Div = 10.0
 _C.TRAIN.w_NCE = 2.0
 _C.TRAIN.w_Instance_NCE = 2.0
 _C.TRAIN.w_Cycle = 2.0
@@ -160,27 +167,27 @@ _C.TRAIN.distributed = False
 # ------------------------------------------------------------------------------
 # preprocessing options
 # ------------------------------------------------------------------------------
-_C.TRAIN.preprocess = CN()
+_C.TRAIN.PREPROCESS = CN()
 # resize image to a fixed size before training
-_C.TRAIN.preprocess.resize = True
+_C.TRAIN.PREPROCESS.resize = True
 # scale width of the image
-_C.TRAIN.preprocess.scale_width = False
+_C.TRAIN.PREPROCESS.scale_width = False
 # scale short side of the image
-_C.TRAIN.preprocess.scale_shortside = False
+_C.TRAIN.PREPROCESS.scale_shortside = False
 # crop and scale image to a fixed size
-_C.TRAIN.preprocess.zoom = False
+_C.TRAIN.PREPROCESS.zoom = False
 # crop image to a fixed size
-_C.TRAIN.preprocess.crop = False
+_C.TRAIN.PREPROCESS.crop = False
 # crop image to a fixed size at a fixed location
-_C.TRAIN.preprocess.crop_size = [256, 256]
+_C.TRAIN.PREPROCESS.crop_size = [256, 256]
 # crop image to a fixed size at a random location
-_C.TRAIN.preprocess.patch = False
+_C.TRAIN.PREPROCESS.patch = False
 # flip image horizontally
-_C.TRAIN.preprocess.flip = True
+_C.TRAIN.PREPROCESS.flip = True
 # trim image to a fixed size
-_C.TRAIN.preprocess.trim = False
+_C.TRAIN.PREPROCESS.trim = False
 # convert image to grayscale
-_C.TRAIN.preprocess.grayscale = False
+_C.TRAIN.PREPROCESS.grayscale = False
 
 # ------------------------------------------------------------------------------
 # Visualization
