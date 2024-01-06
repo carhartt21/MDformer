@@ -18,8 +18,16 @@ from data.single_dataset import SingleDataset
 # from data import TrainDataset
 import utils
 import networks
+from typing import Any, Dict, List, Tuple, Union
 
-def seed_everything(seed=42):
+
+def set_seed(seed=42):
+    """
+    Set the random seed for reproducibility.
+
+    Args:
+        seed (int): The random seed value. Default is 42.
+    """    
     random.seed(seed)
     np.random.seed(seed)
     os.environ['PYTHONHASHSEED'] = str(seed)
@@ -28,10 +36,22 @@ def seed_everything(seed=42):
     torch.cuda.manual_seed_all(seed) # if use multi-GPU
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    # print(f"seed : {seed}")
+    print("Seed set to: {}".format(seed))
+    return
 
 def build_model(model_cfg, device, num_domains=8, distributed=False):
-    
+    """
+    Build the model for training.
+
+    Args:
+        model_cfg (object): The configuration object for the model.
+        device (torch.device): The device to use for training.
+        num_domains (int): The number of domains. Default is 8.
+        distributed (bool): Whether to use distributed training. Default is False.
+
+    Returns:
+        tuple: A tuple containing the model_G, parameter_G, model_D, parameter_D, and model_F.
+    """
     if distributed:
         print("Distributed Training")
         torch.cuda.set_device(model_cfg.gpu_ids[0])
@@ -45,6 +65,13 @@ def build_model(model_cfg, device, num_domains=8, distributed=False):
     model_D = {}
     parameter_D = []
     model_F = {}
+
+
+    # model_G['ContentEncoder'] = networks.ContentEncoder()
+    # model_G['StyleEncoder'] = networks.StyleEncoder()
+    # model_G['Transformer'] = networks.Transformer_Aggregator()
+    # model_G['MLP_Adain'] = networks.MLP()
+    # model_G['Generator'] = networks.Generator()
     
     model_G['ContentEncoder'] = nn.DataParallel(networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling))
     
@@ -56,13 +83,15 @@ def build_model(model_cfg, device, num_domains=8, distributed=False):
     model_G['Transformer'] = nn.DataParallel(networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
                                                              patch_size=model_cfg.patch_size, 
                                                              embed_C=model_cfg.TRANSFORMER.embed_C, 
-                                                             feat_C=model_cfg.TRANSFORMER.feat_C, 
+                                                             feat_C=model_cfg.n_generator_filters*2**(model_cfg.n_downsampling), 
                                                              depth=model_cfg.TRANSFORMER.depth, 
                                                              heads=model_cfg.TRANSFORMER.heads, 
                                                              mlp_dim=model_cfg.TRANSFORMER.mlp_dim))
-    
-    model_G['MLP_Adain'] = nn.DataParallel(networks.MLP())
-    
+    model_G['MLP_Adain'] = nn.DataParallel(networks.MLP(input_dim=model_cfg.style_dim, output_dim=2048))
+    # model_G['MLP_Adain'] = nn.DataParallel(networks.MLP())
+
+    model_G['DomainClassifier'] = nn.DataParallel(networks.TransformerClassifier(d_model=model_cfg.TRANSFORMER.embed_C, num_classes=num_domains))
+
     model_G['Generator'] = nn.DataParallel(networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
                                               patch_size=model_cfg.patch_size, 
                                               embed_C=model_cfg.TRANSFORMER.embed_C, 
@@ -71,7 +100,7 @@ def build_model(model_cfg, device, num_domains=8, distributed=False):
                                               n_downsampling=model_cfg.n_downsampling,
                                               ))
     
-    model_G['Mapping Network'] = nn.DataParallel(networks.MappingNetwork(num_domains=num_domains, 
+    model_G['MappingNetwork'] = nn.DataParallel(networks.MappingNetwork(num_domains=num_domains, 
                                                             latent_dim=model_cfg.latent_dim,
                                                             style_dim=model_cfg.style_dim))
     
@@ -153,22 +182,43 @@ def build_model(model_cfg, device, num_domains=8, distributed=False):
     return model_G, parameter_G, model_D, parameter_D, model_F
 
 
-def criterion_set(cfg, device):
-    criterions = {}
+def set_criterions(cfg: Any, device: str) -> Dict[str, Any]:
+    """
+    Create a dictionary of critererions for different loss functions used in the model.
+
+    Args:
+        cfg (object): Configuration object containing various parameters.
+        device (str): Device to be used for loss computation.
+
+    Returns:
+        dict: Dictionary containing different loss functions.
+    """
+
+    criterions: Dict[str, Any] = {}
     criterions['GAN'] = utils.GANLoss().to(device)
     criterions['Idt'] = torch.nn.L1Loss().to(device)
     criterions['NCE'] = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu).to(device)
-    criterions['InstNCE'] = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu * cfg.DATASET.n_bbox).to(device)
-    criterions['Style_Div'] = utils.Style_Div_Loss().to(device)
+    criterions['InstNCE'] = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu * cfg.DATASET.n_bbox_max).to(device)
+    criterions['Style_Div'] = torch.nn.L1Loss().to(device)
     criterions['Cycle'] = torch.nn.L1Loss().to(device)
     return criterions
 
-def criterion_test(cfg, device):
-    criterions = {}
+def criterion_test(cfg: Any, device: str) -> Dict[str, Any]:
+    """
+    Create a dictionary of critererions for different loss functions used in the model.
+
+    Args:
+        cfg (object): Configuration object containing various parameters.
+        device (str): Device to be used for loss computation.
+
+    Returns:
+        dict: Dictionary containing different loss functions.
+    """
+    criterions: Dict[str, Any] = {}
     criterions['GAN'] = utils.GANLoss().to(device)
     criterions['Idt'] = torch.nn.L1Loss().to(device)
     criterions['NCE'] = utils.PatchNCELoss(cfg.TEST.batch_size).to(device)
-    criterions['InstNCE'] = utils.PatchNCELoss(cfg.TEST.batch_size * cfg.DATASET.n_bbox).to(device)
+    criterions['InstNCE'] = utils.PatchNCELoss(cfg.TEST.batch_size * cfg.DATASET.n_bbox_max).to(device)
     criterions['Style_Div'] = torch.nn.L1Loss().to(device)
     criterions['Cycle'] = torch.nn.L1Loss().to(device)
     return criterions
