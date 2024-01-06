@@ -121,6 +121,20 @@ class HighPass(nn.Module):
         filter = self.filter.unsqueeze(0).unsqueeze(1).repeat(x.size(1), 1, 1, 1)
         return F.conv2d(x, filter, padding=1, groups=x.size(1))
 
+class TransformerClassifier(nn.Module):
+    def __init__(self, d_model, num_classes):
+        super(TransformerClassifier, self).__init__()
+        self.fc = nn.Linear(d_model, num_classes)
+
+    def forward(self, x):
+        # Assuming x is the input tensor with shape [batch_size, seq_length, d_model]
+        cls_token = x[:, 0, :]  # Extract the CLS token from the input sequence
+        cls_token = cls_token.unsqueeze(1)  # Add a dimension for compatibility with linear layer
+        cls_token = cls_token.permute(1, 0, 2)  # Reshape for transformer input [seq_length, batch_size, d_model]
+        
+        logits = self.fc(cls_token)
+        return logits
+
 
 
 ####################################    Transformer   ####################################
@@ -172,6 +186,7 @@ class PositionalEncoding(nn.Module):
         """
         self.pos_emb = self.pos_emb.permute(1, 0, 2)
         return self.dropout(self.pos_emb)
+    
 
 
 ####################################    Norm   ####################################
@@ -198,15 +213,14 @@ class AdaptiveInstanceNorm2d(nn.Module):
 
     def forward(self, x): #x: 4,79,1024
         assert self.weight is not None and self.bias is not None, "Please assign weight and bias before calling AdaIN!"
-        
+
         x = x.transpose(1,2)
         b, c = x.size(0), x.size(1)
         running_mean = self.running_mean.repeat(b) #4096 #tensor([0., 0., 0.,  ..., 0., 0., 0.], device='cuda:0')  
         running_var = self.running_var.repeat(b) #4096 #tensor([1., 1., 1.,  ..., 1., 1., 1.], device='cuda:0')
 
         # Apply instance norm
-        x_reshaped = x.contiguous().view(1, b * c, *x.size()[2:]) #([1, 316, 1024]) 
-        #1,2048,84
+        x_reshaped = x.contiguous().view(1, b * c, *x.size()[2:]) #->(1, 316, 1024)->(1,2048,84)
         out = F.batch_norm(x_reshaped, running_mean, running_var, self.weight, self.bias,True, self.momentum, self.eps)
         # out: 1,4096,79
         
@@ -462,7 +476,8 @@ class PatchEmbedding(nn.Module):
         _, _, H, W = x.shape
         assert H == self.input_size[0] and W == self.input_size[1], \
             "Input image size ({}*{}) doesn't match model ({}*{})".format(H, W, self.input_size[0], self.input_size[1])
-        x = self.proj(x).flatten(2).transpose(1, 2) #proj:4,1024,8,8 #fl:4,1024,64
+        x = self.proj(x).flatten(2).transpose(1, 2) 
+        #proj:4,1024,8,8 #fl:4,1024,64
         #proj:120,1024,1,1  fl:120,1024,1 tr:120,1,1024
         x = self.norm(x)
         return x
