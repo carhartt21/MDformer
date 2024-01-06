@@ -104,9 +104,6 @@ class MultiDomainDataset(data.Dataset):
         # print('label: {}'.format(label))
         img = Image.open(fname).convert('RGB')
 
-        # Check image size and discard small images
-        # if img.size[0] < self.min_size[0] or img.size[1] < self.min_size[1]:
-        #     return
         
         parent, name = str(fname.parent), fname.name
         sample = Munch(img=img)
@@ -121,7 +118,7 @@ class MultiDomainDataset(data.Dataset):
         if os.path.exists(mask_path):
             sample.seg_mask = Image.open(mask_path).convert('L')
         else:
-            sample.seg_mask  = []
+            sample.seg_mask  = Image.new('L', img.size, 0)
 
         if self.transform is not None:
             img = self.transform(sample)
@@ -177,10 +174,10 @@ def _make_mult_domain_balanced_sampler(labels):
     weights = class_weights[labels]
     return WeightedRandomSampler(weights, len(weights))
 
-def get_train_loader(root, which='source', img_size=(256, 256),
-                     batch_size=8, prob=0.5, num_workers=4, train_dirs=None, imagenet_normalize=True, max_scale=2.0):
-    print('Preparing DataLoader to fetch %s images '
-          'during the training phase...' % which)
+def get_train_loader(root: str , which: str='source', img_size: (int, int)=(256, 256),
+                     batch_size: int=8, prob: float=0.5, num_workers: int=4, train_dirs: str=None, imagenet_normalize: bool=True, max_scale: float=2.0):
+    print('Preparing {} DataLoader to fetch images '
+          'during the training phase...'.format(which))
 
     if imagenet_normalize:
         mean = [0.485, 0.456, 0.406]
@@ -188,8 +185,15 @@ def get_train_loader(root, which='source', img_size=(256, 256),
     else:
         mean = [0.5, 0.5, 0.5]
         std = [0.5, 0.5, 0.5]
+    
+    transform = transforms.Compose([
+        transforms.RandomResizedCrop(img_size, scale=(1.0, 2.0)),
+        transforms.RandomHorizontalFlip(p=prob),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=mean, std=std)
+    ])
 
-    transform= transforms.Compose([
+    transform_custom = transforms.Compose([
         ct.RandomScale(max_scale, img_size[0]),
         ct.RandomCrop(img_size),
         ct.HorizontalFlip(),
@@ -202,7 +206,7 @@ def get_train_loader(root, which='source', img_size=(256, 256),
     elif which == 'reference':
         dataset = ReferenceDataset(root, transform)
     elif which == 'multi':
-        dataset = MultiDomainDataset(root, transform, train_dirs=train_dirs, min_size=[max_scale*img_size[0], max_scale*img_size[1]])
+        dataset = MultiDomainDataset(root, transform_custom, train_dirs=train_dirs, min_size=[max_scale*img_size[0], max_scale*img_size[1]])
     else:
         raise NotImplementedError
 
@@ -263,7 +267,7 @@ def get_test_loader(root, img_size=256, batch_size=32,
                            pin_memory=True)
 
 
-class InputFetcher:
+class InputProvider:
     def __init__(self, loader, loader_ref=None, latent_dim=16, mode='', num_domains=2):
         self.loader = loader
         self.loader_ref = loader_ref
@@ -300,7 +304,7 @@ class InputFetcher:
             y_trg = (torch.rand(1)*self.num_domains).int().to(self.device)
             z_trg = torch.randn(x.img.size(0), self.latent_dim)
             z_trg2 = torch.randn(x.img.size(0), self.latent_dim)
-            inputs = Munch(x_src=x.img, y_src=x.domain, seg = x.seg_mask, y_trg=y_trg,
+            inputs = Munch(img_src=x.img, y_src=x.domain, seg = x.seg_mask, y_trg=y_trg,
                            z_trg=z_trg, z_trg2=z_trg2)
         # elif self.mode == 'val':
         #     x_ref, seg, y_ref = self._fetch_inputs()
