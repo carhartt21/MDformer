@@ -36,14 +36,14 @@ class StyleEncoder(nn.Module):
         
     def forward(self, x, y=None):
         h = self.model(x)
-        # h = h.view(h.size(0), -1)
-        # out = []
-        # for layer in self.unshared:
-            # out += [layer(h)]
-        # out = torch.stack(out, dim=1)  # (batch, num_domains, style_dim)
-        # idx = torch.LongTensor(range(y.size(0))).to(y.device)
-        # s = out[idx, y]  # (batch, style_dim)
-        return h
+        h = h.view(h.size(0), -1)
+        out = []
+        for layer in self.unshared:
+            out += [layer(h)]
+        out = torch.stack(out, dim=1)  # (batch, num_domains, style_dim)
+        idx = torch.LongTensor(range(y.size(0))).to(y.device)
+        s = out[idx, y]  # (batch, style_dim)
+        return s
 
 class StyleEncoder_v2(nn.Module):
     def __init__(self, img_size=256, style_dim=64, num_domains=2, max_conv_dim=512):
@@ -123,6 +123,8 @@ class MappingNetwork(nn.Module):
         for layer in self.unshared:
             out += [layer(h)]
         out = torch.stack(out, dim=1)  # (batch, num_domains, style_dim)
-        idx = torch.LongTensor(range(y.size(0))).to(y.device)
-        s = out[idx, y]  # (batch, style_dim)
+        # idx = torch.LongTensor(range(y.size(0))).to(y.device)
+        
+        s = out[:, y, :]  # (batch, style_dim)
+
         return s    
