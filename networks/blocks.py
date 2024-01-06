@@ -122,19 +122,22 @@ class HighPass(nn.Module):
         return F.conv2d(x, filter, padding=1, groups=x.size(1))
 
 class TransformerClassifier(nn.Module):
-    def __init__(self, d_model, num_classes):
+    def __init__(self, d_model, num_classes, pool=False):
         super(TransformerClassifier, self).__init__()
-        self.fc = nn.Linear(d_model, num_classes)
+        self.pool = pool
+        self.to_latent = nn.Identity()
+        self.mlp_head = nn.Linear(d_model, num_classes)
 
     def forward(self, x):
         # Assuming x is the input tensor with shape [batch_size, seq_length, d_model]
-        cls_token = x[:, 0, :]  # Extract the CLS token from the input sequence
-        cls_token = cls_token.unsqueeze(1)  # Add a dimension for compatibility with linear layer
-        cls_token = cls_token.permute(1, 0, 2)  # Reshape for transformer input [seq_length, batch_size, d_model]
+        # cls_token = x[:, 0, :]  # Extract the CLS token from the input sequence
+        # cls_token = cls_token.unsqueeze(1)  # Add a dimension for compatibility with linear layer
+        # cls_token = cls_token.permute(1, 0, 2)  # Reshape for transformer input [seq_length, batch_size, d_model]
         
-        logits = self.fc(cls_token)
-        return logits
-
+        x = self.transformer(x)
+        x = x.mean(dim = 1) if self.pool == 'mean' else x[:, 0]
+        x = self.to_latent(x)
+        return self.mlp_head(x)
 
 
 ####################################    Transformer   ####################################
