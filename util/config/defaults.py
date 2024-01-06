@@ -26,8 +26,8 @@ _C.DATASET.num_domains = 8
 # TODO change from width and height
 # maximum number of images per folder
 _C.DATASET.max_dataset_size = 200000
-# number of object boxes per image
-_C.DATASET.n_bbox = -1
+# Maximum number of object boxes per image
+_C.DATASET.n_bbox_max = -1
 # enable random flip during training
 _C.DATASET.random_flip = True
 _C.DATASET.dir_A = "./data/trainA"
