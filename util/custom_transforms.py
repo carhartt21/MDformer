@@ -1,10 +1,11 @@
+import sys
 import numpy as np
 import torch
 import random
 from skimage.measure import label, regionprops
 import torchvision.transforms as transforms
+from torchvision.transforms import InterpolationMode
 
-from PIL import Image, ImageDraw
 
 class RandomCrop:
     def __init__(self, size: tuple):
@@ -60,27 +61,17 @@ class RandomScale:
             The transformed sample.
         """
         image = sample.img
-        h, w = image.size[:2]
-        min_scale = max(self.output_size[0]/h, self.output_size[1]/w)
-        if min_scale < 1:
-            max_scale = 1
-        else:
-            max_scale = min_scale * 1.25
+        w, h = image.size[:2]
+        min_scale = max(self.output_size[0]/w, self.output_size[1]/h)
+        max_scale = min_scale * 1.25
         scale = random.uniform(min_scale, max_scale)
-        new_size = (int(h * scale), int(w * scale))
-        if isinstance(new_size, int):
-            if h > w:
-                new_h, new_w = new_size * h / w, new_size
-            else:
-                new_h, new_w = new_size, new_size * w / h
-        else:
-            new_h, new_w = new_size
-
-        new_h, new_w = int(new_h), int(new_w)
-
-        sample.img = transforms.functional.resize(image, (new_h, new_w))
-        sample.seg_mask  = transforms.functional.resize(sample.seg_mask , (new_h, new_w))
-
+        # new_size = (int(w * scale), int(h * scale))
+        # print("image.size: {}, scale: {}, new_size: {}, min_scale: {}, max_scale: {}".format(image.size, scale, new_size, min_scale, max_scale))
+        # new_h, new_w = int(new_h), int(new_w)
+        sample.img.save('before_resize.jpg')
+        sample.img = transforms.functional.resize(image, int(w * scale))
+        sample.seg_mask  = transforms.functional.resize(sample.seg_mask , int(w * scale), interpolation=InterpolationMode.NEAREST)
+        sample.img.save('after_resize.jpg')
         return sample
     
 class HorizontalFlip:
@@ -194,75 +185,74 @@ class SegMaskToPatches:
         _classes = torch.unique(sample.seg_mask, sorted=True)
         # Calculate the minimum number of pixels that should be covered by the segmentation map in each patch
         min_pixels = self.patch_size ** 2 * self.min_coverage
-        
-        # Create an empty grid to map the segmentation onto
-        # grid = np.full((height, width), 255)
-        # empty_array = np.full((height, width), 255)
-        
+        # Create a grid to hold the classes assigned to each patch
         grid = torch.full((n_patches, n_patches), -1, dtype=torch.int16)
 
         # Iterate over each cell in the grid
         for i in range(n_patches):
             for j in range(n_patches):
-                # Calculate the bounds of the current cell
                 top = i * self.patch_size
                 bottom = (i + 1) * self.patch_size
                 left = j * self.patch_size
-                right = (j + 1) * self.patch_size
-                
+                right = (j + 1) * self.patch_size                
                 # Iterate over each class in the segmentation map
                 for c in _classes:
-                    # print("c: ", c)
                     # Count the number of pixels covered by the current class in the current cell
-                    pixels_covered = torch.sum(sample.seg_mask[top:bottom, left:right] == c)
+                    pixels_covered = torch.sum(sample.seg_mask[:, top:bottom, left:right] == c)
                     
                     # If the number of pixels covered is greater than or equal to the minimum required, assign the class to the current cell
                     if pixels_covered >= min_pixels:
                         grid[i, j] = c
+
         sample.seg_mask= grid.view(-1)
         return sample
 
 
-# TODO fix bounding boxes
 class SegMaskToBBoxes:
-    def __init__(self, classes: list, min_size: int=200):
-        self.classes = classes
+    def __init__(self, fg_classes: list=[1, 7, 14], min_size: int=256, min_extent: float=0.5, max_n_bbox=8):
+        """
+        Initialize SegMaskToBBoxes transform.
+        fg_classes (list): The list of classes to consider as foreground.
+        min_size (int): The minimum size of the bounding box.
+        min_extent (float): The minimum extent of the bounding box.
+        max_n_bbox (int): The maximum number of bounding boxes to return.
+        """
+        self.fg_classes = fg_classes
         self.min_size = min_size
+        self.min_extent = min_extent
+        self.max_n_bbox = max_n_bbox    
 
     def __call__(self, sample):
+        """
+        Convert the segmentation map in the input sample to tensor.
+        Args:
+            sample: The input sample.  
+        Returns:
+            The transformed sample.
+        """
+
         seg_mask = np.asarray(sample.seg_mask)
-        visualization = Image.new('L', (sample.img.size[0], sample.img.size[1]))
         bboxes = []
-
-        for class_id in [1, 7, 14]:
-            # print('class_id: {}'.format(class_id))
-            class_pixels_1 = seg_mask == class_id
-
-
-            if class_pixels_1.sum() > 0: 
-                class_pixels = np.stack(class_pixels_1, axis=1)
+        img = sample.img
+        regions = []
+        sample.img.save('img.png')
+        for class_id in self.fg_classes:
+            class_pixels = seg_mask == class_id
+            if class_pixels.sum() > 0: 
                 labels = label(class_pixels)
-                bbox_props = regionprops(labels)
-                for prop in bbox_props:
-                    if prop.area > self.min_size:
-                        bboxes.append(prop.bbox)                     
-            else:
-                continue
-            # else:
-                # print('class_pixels: {}'.format(class_pixels))
-            # print(class_pixels)
-
-            # boxes = _box
-        _img = sample.img.copy()
-        draw = ImageDraw.Draw(_img)
-        if len(bboxes) > 0:
-            for bbox in bboxes:
-                # print("bbox orig: ", bbox)
-                x1, y1, x2, y2 = bbox
-                draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=2)
-        _img.save('input_img.jpg')   
+                regions += regionprops(labels)
+        # sort by area
+        while (len(bboxes) < self.max_n_bbox):
+            for prop in sorted(
+                regions,
+                key=lambda r: r.area,
+                reverse=True,
+            ):
+                if prop.area > self.min_size and prop.extent > self.min_extent:
+                    bboxes.append(prop.bbox)
+                else:
+                    continue
         sample['bboxes'] = bboxes
         return sample
     
-    #TODO: continue here check if bboxes are correct
 
