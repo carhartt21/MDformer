@@ -19,11 +19,10 @@ from collections import OrderedDict
 from data import create_dataset
 from util.config import cfg
 
-from data_loader import MultiDomainDataset, InputFetcher, get_train_loader
+from data_loader import MultiDomainDataset, InputProvider, get_train_loader
 
 TRAIN = 1
 EVAL  = 0
-
 
 parser = argparse.ArgumentParser(description='arguments yaml load')
 parser.add_argument("--conf",
@@ -57,9 +56,6 @@ if __name__ == "__main__":
         nargs=argparse.REMAINDER,
     )
     args = parser.parse_args()
-    # with open(args.conf, 'r') as f:
-        # configuration
-        # conf =  yaml.load(f, Loader=yaml.FullLoader)
 
     cfg.merge_from_file(args.cfg)
     cfg.merge_from_list(args.opts)
@@ -75,8 +71,10 @@ if __name__ == "__main__":
 
     # data loader
     # continue here
-    data_loader = get_train_loader(root='', which=cfg.DATASET.mode, img_size=cfg.MODEL.img_size, batch_size=cfg.TRAIN.batch_size_per_gpu, train_dirs=cfg.TRAIN.train_dirs)  # create a dataset given opt.dataset_mode and other options
-    
+    data_loader = get_train_loader(root='', which=cfg.DATASET.mode, img_size=cfg.MODEL.img_size, batch_size=cfg.TRAIN.batch_size_per_gpu, train_list=cfg.TRAIN.train_list)  # create a dataset given opt.dataset_mode and other options
+    # ref_loader = get_train_loader(root=cfg.ref_img_dir, which='reference', img_size=args.img_size, img_size=cfg.MODEL.img_size, batch_size=cfg.TRAIN.batch_size_per_gpu)
+    input_provider = InputProvider(loader=data_loader, latent_dim=cfg.MODEL.latent_dim, mode='train', num_domains=cfg.DATASET.num_domains)
+
     #model_load
     model_G, parameter_G, model_D, parameter_D, model_F = initialize.build_model(cfg.MODEL, device, cfg.DATASET.num_domains, cfg.TRAIN.distributed)
 
@@ -93,7 +91,7 @@ if __name__ == "__main__":
         optimizer_D.load_state_dict(optim_load_dict_d)
         
         # optimizer_F.load_state_dict(optim_load_dict)
-        
+    # TODO maybe adjust lr for mapping network
     if cfg.TRAIN.lr_scheduler:
         lr_scheduler_G = optim.lr_scheduler.StepLR(optimizer_G, cfg.TRAIN.scheduler_step_size, 0.1)
         lr_scheduler_D = optim.lr_scheduler.StepLR(optimizer_D, cfg.TRAIN.scheduler_step_size, 0.1)
@@ -102,8 +100,12 @@ if __name__ == "__main__":
 
     visualizer = Visualizer(cfg.MODEL.name, cfg.TRAIN.log_path, cfg.VISDOM)
 
+    # input_provider_val = InputProvider(data_loader.val, None, args.latent_dim, 'val')
+    # inputs_val = next(input_provider_val)
+
     print('Start Training')
     for epoch in range(cfg.TRAIN.start_epoch, cfg.TRAIN.end_epoch):
+
         utils.model_mode(model_G,TRAIN)
         utils.model_mode(model_D,TRAIN)
         utils.model_mode(model_F,TRAIN)
@@ -111,35 +113,35 @@ if __name__ == "__main__":
         iter_date_time = time.time()
 
         dataset_size = len(data_loader)
-        print('#training images = {}'.format(dataset_size))
 
         print(f'Training progress(ep:{epoch+1})')
 
-        for i, inputs in enumerate(tqdm(data_loader)):
-            box_feature = torch.empty(1).to(device)  
-            # print('inputs  {} {}'.format(len(inputs), inputs))
-            # inputs = inputs[0]
-            inputs.img = inputs.img.to(device)
-            inputs.seg_mask = inputs.seg_mask.to(device)
-            inputs.domain = inputs.domain.to(device)
-
+        box_feature = torch.empty(1).to(device)  
+        # print('inputs  {} {}'.format(len(inputs), inputs))
+        # inputs = inputs[0]
+        for i in range(0, cfg.TRAIN.epoch_iters, cfg.TRAIN.batch_size_per_gpu):
+            inputs = next(input_provider)            
+            for key, val in inputs.items():
+                if isinstance(val, torch.Tensor):
+                    # print('key: {} val: {}'.format(key, val.shape))
+                    inputs[key] = val.to(device)
 
             # Model Forward
-            fake_img, fake_box, features = loss.model_forward_generation(inputs=inputs, model=model_G, n_bbox=cfg.DATASET.n_bbox, recon=False, feat_layers=cfg.MODEL.feat_layers)
+            fake_img, fake_box, features, y_src_pred = loss.model_forward_generation(inputs=inputs, z_trg=inputs.z_trg, model=model_G, n_bbox=cfg.DATASET.n_bbox_max, feat_layers=cfg.MODEL.feat_layers)
             if cfg.TRAIN.w_Div > 0.0:
-                fake_img_2, _, _ = loss.model_forward_generation(inputs=inputs, model=model_G,feat_layers=cfg.MODEL.feat_layers)
+                fake_img_2, _, _, _= loss.model_forward_generation(inputs=inputs, z_trg=inputs.z_trg2, model=model_G,feat_layers=cfg.MODEL.feat_layers)
             else:
                 fake_img_2 = torch.empty(1).to(device)
-            recon_img, style_code = loss.model_forward_reconstruction(fake_image=fake_img, model=model_G, source_domain=inputs.source_domain, feat_layers=cfg.MODEL.feat_layers)
-            if cfg.DATASET.n_bbox > 0 and len(features) > len(cfg.MODEL.feat_layers):
+            recon_img, style_code = loss.model_forward_reconstruction(inputs=inputs, fake_img=fake_img, model=model_G, y_src_pred=y_src_pred, feat_layers=cfg.MODEL.feat_layers)
+            if cfg.DATASET.n_bbox_max > 0 and len(features) > len(cfg.MODEL.feat_layers):
                 features, box_feature =  features[:-1], features[-1]
 
             # MLP_initialize
-            if epoch == 0 and i ==0 and (cfg.TRAIN.w_NCE != 0.0  or (cfg.TRAIN.w_Instance_NCE != 0.0 and cfg.TRAIN.data.n_bbox > 0)):
+            if epoch == 0 and i == 0 and (cfg.TRAIN.w_NCE != 0.0  or (cfg.TRAIN.w_Instance_NCE != 0.0 and cfg.TRAIN.data.n_bbox > 0)):
                 if cfg.TRAIN.w_NCE != 0.0:
-                    model_F['MLP_head'].module.create_mlp(features=features, device=device)
-                if (cfg.TRAIN.w_Instance_NCE != 0.0 and cfg.DATASET.n_bbox > 0):
-                    model_F['MLP_head_inst'].create_mlp(box_feature=[box_feature], device=device)
+                    model_F['MLP_head'].module.module.create_mlp(feats=features, device=device)
+                if (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox_max > 0):
+                    model_F['MLP_head_inst'].create_mlp(feats=[box_feature], device=device)
 
                 parameter_F = []
                 for key, val in model_F.items():
@@ -151,7 +153,7 @@ if __name__ == "__main__":
 
             #Backward & Optimizer
             optimize_start_time = time.time() 
-
+            fake_imgs = [fake_img, fake_img_2]
             #Discriminator  
             utils.set_requires_grad(model_D['Discrim'].module, True)
             optimizer_D.zero_grad()
@@ -163,7 +165,7 @@ if __name__ == "__main__":
             utils.set_requires_grad(model_D['Discrim'].module, False)
             optimizer_G.zero_grad()
             optimizer_F.zero_grad()
-            total_G_loss, G_losses = loss.compute_G_loss(inputs, fake_img, recon_img, style_code, features, box_feature, model_G, model_D, model_F, criterions, cfg)
+            total_G_loss, G_losses = loss.compute_G_loss(inputs, fake_imgs, recon_img, style_code, features, box_feature, model_G, model_D, model_F, criterions, cfg)
             total_G_loss.backward()
             optimizer_G.step()
             optimizer_F.step()
@@ -185,7 +187,7 @@ if __name__ == "__main__":
                 utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_D, optimizer_D)
                 utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_F, optimizer_F)
 
-        # utils.save_color(inputs['A'], 'test/realA', str(epoch))
-        # utils.save_color(inputs['B'], 'test/realB', str(epoch))
-        # utils.save_color(fake_img, 'test/fake', str(epoch))
-        # utils.save_color(recon_img, 'test/recon', str(epoch))
+            # utils.save_color(inputs['A'], 'test/realA', str(epoch))
+            # utils.save_color(inputs['B'], 'test/realB', str(epoch))
+            # utils.save_color(fake_img, 'test/fake', str(epoch))
+            # utils.save_color(recon_img, 'test/recon', str(epoch))
