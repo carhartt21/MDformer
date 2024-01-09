@@ -12,26 +12,24 @@ _C.DIR = "./weights"
 # -----------------------------------------------------------------------------
 # dataset name
 _C.DATASET = CN()
-_C.DATASET.name = 'OUTSIDE'
 # dataset mode (e.g., single, aligned, unaligned, multi)
 _C.DATASET.mode = "multi"
-# path to images (should have subfolders trainA, trainB, valA, valB, etc)
+# path to images (should have subfolders images, seg_labels, domain_labels)
 _C.DATASET.root_dataset = "./data/"
-_C.DATASET.list_train = "./data/training.odgt"
-_C.DATASET.list_val = "./data/validation.odgt"
+# txt file containing training image folder
+_C.DATASET.train_list = "./data/train_list.txt"
+# txt file containing referenc image folder
+_C.DATASET.ref_list = "./data/ref_list.txt"
 # number of semantic classes 
 _C.DATASET.num_seg_class = 16
 # number of domains
 _C.DATASET.num_domains = 8
-# TODO change from width and height
 # maximum number of images per folder
 _C.DATASET.max_dataset_size = 200000
 # Maximum number of object boxes per image
 _C.DATASET.n_bbox_max = -1
 # enable random flip during training
 _C.DATASET.random_flip = True
-_C.DATASET.dir_A = "./data/trainA"
-_C.DATASET.dir_B = "./data/trainB"
 
 # -----------------------------------------------------------------------------
 # Model
@@ -98,8 +96,6 @@ _C.MODEL.TRANSFORMER.mlp_dim = 4096
 # Training
 # -----------------------------------------------------------------------------
 _C.TRAIN = CN()
-# txt file containing training image folder patch_size
-_C.TRAIN.train_dirs = "train_dirs.txt"
 # pretrain the classifier
 _C.TRAIN.pretrain = False
 # seed to sample training images
