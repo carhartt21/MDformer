@@ -27,14 +27,14 @@ class StyleEncoder(nn.Module):
                           blocks.Downsample(n_generator_filters * mult * 2)]
         
         model += [nn.AdaptiveAvgPool2d(1)]
-        model += [nn.Conv2d(n_generator_filters * mult * 2, style_dim, 1, 1, 0)]    
+        model += [nn.Conv2d(n_generator_filters * mult * 2, n_generator_filters * mult * 2, 1, 1, 0)]    
         self.model = nn.Sequential(*model)
         # Unshared layers for domain-specific transformation 
         self.unshared = nn.ModuleList()
         for _ in range(num_domains):
             self.unshared += [nn.Linear(n_generator_filters * mult * 2, style_dim)]        
         
-    def forward(self, x, y=None):
+    def forward(self, x, y):
         h = self.model(x)
         h = h.view(h.size(0), -1)
         out = []
@@ -44,6 +44,7 @@ class StyleEncoder(nn.Module):
         idx = torch.LongTensor(range(y.size(0))).to(y.device)
         s = out[idx, y]  # (batch, style_dim)
         return s
+
 
 class StyleEncoder_v2(nn.Module):
     def __init__(self, img_size=256, style_dim=64, num_domains=2, max_conv_dim=512):
@@ -123,8 +124,6 @@ class MappingNetwork(nn.Module):
         for layer in self.unshared:
             out += [layer(h)]
         out = torch.stack(out, dim=1)  # (batch, num_domains, style_dim)
-        # idx = torch.LongTensor(range(y.size(0))).to(y.device)
-        
+        # idx = torch.LongTensor(range(out.size(0))).to(y.device)
         s = out[:, y, :]  # (batch, style_dim)
-
         return s    
