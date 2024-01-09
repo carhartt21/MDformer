@@ -1,6 +1,10 @@
+import numpy as np
 import torch
 import random
+from skimage.measure import label, regionprops
 import torchvision.transforms as transforms
+
+from PIL import Image, ImageDraw
 
 class RandomCrop:
     def __init__(self, size: tuple):
@@ -32,7 +36,7 @@ class RandomCrop:
 
 
 class RandomScale:
-    def __init__(self, max_scale: float, min_output_size: int):
+    def __init__(self, min_output_size: tuple):
         """
         Initialize RandomScale transform.
 
@@ -40,9 +44,9 @@ class RandomScale:
             max_scale (float): The maximum scale of the image.
             min_output_size (int): The minimum size of the short side of the scaled image.
         """        
-        assert isinstance(max_scale, float), "Max scale must be a float"
-        assert isinstance(min_output_size, int), "Minimum output size must be an int"
-        self.max_scale = max_scale
+        # assert isinstance(max_scale, float), "Max scale must be a float"
+        assert isinstance(min_output_size, tuple), "Minimum output size must be an tuple"
+        # self.max_scale = max_scale
         self.output_size = min_output_size
 
     def __call__(self, sample):
@@ -56,13 +60,13 @@ class RandomScale:
             The transformed sample.
         """
         image = sample.img
-        image_size = image.size
-        min_scale = max(self.output_size/image_size[0], self.output_size/image_size[1])
-        if min_scale > self.max_scale:
-            scale = min_scale
-        else:     
-            scale = random.uniform(min_scale, self.max_scale)
         h, w = image.size[:2]
+        min_scale = max(self.output_size[0]/h, self.output_size[1]/w)
+        if min_scale < 1:
+            max_scale = 1
+        else:
+            max_scale = min_scale * 1.25
+        scale = random.uniform(min_scale, max_scale)
         new_size = (int(h * scale), int(w * scale))
         if isinstance(new_size, int):
             if h > w:
@@ -150,7 +154,115 @@ class ToTensor:
             The transformed sample.
         """
         sample.img = transforms.functional.to_tensor(sample.img)
-        sample.seg_mask = transforms.functional.to_tensor(sample.seg_mask)
+        sample.seg_mask = transforms.functional.pil_to_tensor(sample.seg_mask)
+        sample.bboxes = torch.tensor(sample.bboxes)
+        return sample
+
+class SegMaskToPatches:
+    def __init__(self, patch_size: int = 16, min_coverage: float = 0.9):
+        """
+        Initialize SegMaskToPatches transform.
+
+        Args:
+            patch_size (int): The size of the patches.
+            min_coverage (float): The minimum percentage of pixels that should be covered by a class in a patch for the class to be assigned to the patch.
+        """
+        assert isinstance(patch_size, int), "Patch size must be an int"
+        assert isinstance(min_coverage, float), "Minimum coverage must be a float"
+        assert 0 <= min_coverage <= 1, "Minimum coverage must be between 0 and 1"
+        
+        self.patch_size = patch_size
+        self.min_coverage = min_coverage
+
+    def __call__(self, sample):
+        """
+        Convert the segmentation map in the input sample to tensor.
+
+        Args:
+            sample: The input sample.
+
+        Returns:
+            The transformed sample.
+        """
+      
+        height, width = sample.seg_mask.shape[-2:]
+        assert height == width, "Segmenation map height {} and width {} are not equal".format(height, width)
+        assert height % self.patch_size == 0, "Segmenation map {}x{} is not divisible by patch size {}".format(height, width, self.patch_size)
+
+        n_patches = (height // self.patch_size)
+        # Get list of unique classes in the segmentation map
+        _classes = torch.unique(sample.seg_mask, sorted=True)
+        # Calculate the minimum number of pixels that should be covered by the segmentation map in each patch
+        min_pixels = self.patch_size ** 2 * self.min_coverage
+        
+        # Create an empty grid to map the segmentation onto
+        # grid = np.full((height, width), 255)
+        # empty_array = np.full((height, width), 255)
+        
+        grid = torch.full((n_patches, n_patches), -1, dtype=torch.int16)
+
+        # Iterate over each cell in the grid
+        for i in range(n_patches):
+            for j in range(n_patches):
+                # Calculate the bounds of the current cell
+                top = i * self.patch_size
+                bottom = (i + 1) * self.patch_size
+                left = j * self.patch_size
+                right = (j + 1) * self.patch_size
+                
+                # Iterate over each class in the segmentation map
+                for c in _classes:
+                    # print("c: ", c)
+                    # Count the number of pixels covered by the current class in the current cell
+                    pixels_covered = torch.sum(sample.seg_mask[top:bottom, left:right] == c)
+                    
+                    # If the number of pixels covered is greater than or equal to the minimum required, assign the class to the current cell
+                    if pixels_covered >= min_pixels:
+                        grid[i, j] = c
+        sample.seg_mask= grid.view(-1)
+        return sample
+
+
+# TODO fix bounding boxes
+class SegMaskToBBoxes:
+    def __init__(self, classes: list, min_size: int=200):
+        self.classes = classes
+        self.min_size = min_size
+
+    def __call__(self, sample):
+        seg_mask = np.asarray(sample.seg_mask)
+        visualization = Image.new('L', (sample.img.size[0], sample.img.size[1]))
+        bboxes = []
+
+        for class_id in [1, 7, 14]:
+            # print('class_id: {}'.format(class_id))
+            class_pixels_1 = seg_mask == class_id
+
+
+            if class_pixels_1.sum() > 0: 
+                class_pixels = np.stack(class_pixels_1, axis=1)
+                labels = label(class_pixels)
+                bbox_props = regionprops(labels)
+                for prop in bbox_props:
+                    if prop.area > self.min_size:
+                        bboxes.append(prop.bbox)                     
+            else:
+                continue
+            # else:
+                # print('class_pixels: {}'.format(class_pixels))
+            # print(class_pixels)
+
+            # boxes = _box
+        _img = sample.img.copy()
+        draw = ImageDraw.Draw(_img)
+        if len(bboxes) > 0:
+            for bbox in bboxes:
+                # print("bbox orig: ", bbox)
+                x1, y1, x2, y2 = bbox
+                draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0), width=2)
+        _img.save('input_img.jpg')   
+        sample['bboxes'] = bboxes
         return sample
     
-    
+    #TODO: continue here check if bboxes are correct
+
