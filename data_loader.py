@@ -15,7 +15,6 @@ import os
 import random
 
 from munch import Munch
-from PIL import Image
 import numpy as np
 
 import torch
@@ -25,7 +24,6 @@ from torchvision import transforms
 from torchvision.datasets import ImageFolder
 
 import util.custom_transforms as ct
-
 
 def listdir(dir):
 # find all files with extension png or jpg in a directory dir
@@ -52,8 +50,8 @@ class DefaultDataset(data.Dataset):
         return len(self.samples)
 
 class MultiDomainDataset(data.Dataset):
-    def __init__(self, root, transform=None, train_dirs=None, min_size=(200, 200)):
-        self.samples = self._make_dataset(root, train_dirs=train_dirs)
+    def __init__(self, transform=None, train_list=None, min_size=(200, 200)):
+        self.samples = self._make_dataset(train_list=train_list)
         self.transform = transform
         self.min_size = min_size
 
@@ -73,55 +71,37 @@ class MultiDomainDataset(data.Dataset):
 
         self.num_sample = len(self.list_sample)
         assert self.num_sample > 0
-        print('# samples: {}'.format(self.num_sample))
+        # print('# samples: {}'.format(self.num_sample))
         return self.list_sample
 
-    def _make_dataset(self, root, train_dirs=None):
-        if train_dirs is not None:
+    def _make_dataset(self, train_list=None):
+        if train_list is not None:
             # input from folders listed in text file
-            return self.parse_input_folders(train_dirs)
-        else: 
-            # input from folders in root generating labels from the folder structure
-            domain_groups = os.listdir(root)
-            fnames, labels = [], []
-            for idx1, domain_group in enumerate(sorted(domain_groups)):
-                domains = os.listdir(os.path.join(root, domain_group))
-                for idx2, domain in enumerate(sorted(domains)):
-                    # print('domain: {}'.format(domain))
-                    label = [-1] * len(domain_groups)
-                    class_dir = os.path.join(root, domain_group, domain)
-                    cls_fnames = listdir(class_dir)
-                    fnames += cls_fnames
-                    # get main label from folder structure
-                    label[idx1] = idx2
-                    labels += [label] * len(cls_fnames)
-                # print('fnames: {} labels: {}'.format(fnames, labels))
-            return fnames, labels
+            return self.parse_input_folders(train_list)
 
     def __getitem__(self, index):
         fname = self.samples[index]
-        # label = self.targets[index]
-        # print('label: {}'.format(label))
         img = Image.open(fname).convert('RGB')
 
-        
         parent, name = str(fname.parent), fname.name
         sample = Munch(img=img)
-        domain_path = os.path.join(parent.replace('images', 'labels'), name.replace('.jpg', '.npy'))
+        domain_path = os.path.join(parent.replace('images', 'domain_labels'), 
+                                   name.replace('.jpg', '.npy')).replace('.png', '.npy')
         if os.path.exists(domain_path): 
             domain = np.load(domain_path)
             assert(domain.size != 0)
             sample.domain = domain
         else: 
             sample.domain = np.zeros(0)
-        mask_path = os.path.join(parent.replace('images', 'seg_labels'), name.replace('.jpg', '.png'))
+        mask_path = os.path.join(parent.replace('images', 'seg_masks'), name.replace('.jpg', '.png'))
         if os.path.exists(mask_path):
             sample.seg_mask = Image.open(mask_path).convert('L')
         else:
-            sample.seg_mask  = Image.new('L', img.size, 0)
+            sample.seg_mask  = Image.new('L', (0, 0))
 
         if self.transform is not None:
             img = self.transform(sample)
+        # print('img: {}'.format(img.shape))
 
         sample.domain = torch.tensor(sample.domain)
     
@@ -130,32 +110,38 @@ class MultiDomainDataset(data.Dataset):
     def __len__(self):
         return len(self.samples)
 
-
+# TODO: Test ref datset 
 class ReferenceDataset(data.Dataset):
-    def __init__(self, root, transform=None):
-        self.samples, self.targets = self._make_dataset(root)
+    def __init__(self, ref_list, transform=None, num_domains=8, domain_list=[]):
+        self.samples, self.targets = self._make_dataset(ref_list)
         self.transform = transform
+        self.num_domains = num_domains
+        self.domain_list = domain_list
 
-    def _make_dataset(self, root):
-        domains = os.listdir(root)
-        fnames, fnames2, labels = [], [], []
-        for idx, domain in enumerate(sorted(domains)):
-            class_dir = os.path.join(root, domain)
-            cls_fnames = listdir(class_dir)
-            fnames += cls_fnames
-            fnames2 += random.shuffle(cls_fnames)
-            labels += [idx] * len(cls_fnames)
-        return list(zip(fnames, fnames2)), labels
+    def _make_dataset(self, ref_list=None):
+        if ref_list is not None:
+            # input from folders listed in text file
+            return self.parse_input_folders(ref_list)
 
     def __getitem__(self, index):
-        fname, fname2 = self.samples[index]
-        label = self.targets[index]
+        fname = self.samples[index]
         img = Image.open(fname).convert('RGB')
-        img2 = Image.open(fname2).convert('RGB')
-        if self.transform is not None:
-            img = self.transform(img)
-            img2 = self.transform(img2)
-        return img, img2, label
+        sample = Munch(img=img)        
+
+        parent, name = str(fname.parent), fname.name
+        domain_path = os.path.join(parent.replace('images', 'domain_labels'), 
+                                   name.replace('.jpg', '.npy')).replace('.png', '.npy')
+        if os.path.exists(domain_path): 
+            domain = np.load(domain_path)
+            assert(domain.size != 0)
+            if self.domain_list.size > 0:
+                sample.domain = domain[self.domain_list]
+            else:
+                sample.domain = domain
+        else: 
+            sample.domain = np.zeros(self.num_domains)        
+
+        return sample
 
     def __len__(self):
         return len(self.targets)
@@ -175,9 +161,9 @@ def _make_mult_domain_balanced_sampler(labels):
     return WeightedRandomSampler(weights, len(weights))
 
 def get_train_loader(root: str , which: str='source', img_size: (int, int)=(256, 256),
-                     batch_size: int=8, prob: float=0.5, num_workers: int=4, train_dirs: str=None, imagenet_normalize: bool=True, max_scale: float=2.0):
-    print('Preparing {} DataLoader to fetch images '
-          'during the training phase...'.format(which))
+                     batch_size: int=8, prob: float=0.5, num_workers: int=1, train_list: str=None, imagenet_normalize: bool=True, max_scale: float=2.0, max_n_bbox=8):
+    print('Preparing DataLoader to fetch training images '
+          'during the training phase...')
 
     if imagenet_normalize:
         mean = [0.485, 0.456, 0.406]
@@ -194,19 +180,22 @@ def get_train_loader(root: str , which: str='source', img_size: (int, int)=(256,
     ])
 
     transform_custom = transforms.Compose([
-        ct.RandomScale(max_scale, img_size[0]),
+        ct.RandomScale(img_size),
         ct.RandomCrop(img_size),
         ct.HorizontalFlip(),
+        ct.SegMaskToBBoxes([1, 7, 14], max_n_bbox),
+        # ct.SegMaskToBBoxes([14]),
         ct.ToTensor(),
         ct.Normalize(mean=mean,
                 std=std),
+        ct.SegMaskToPatches(8, 0.8)
         ])
     if which == 'source':
         dataset = ImageFolder(root, transform)
     elif which == 'reference':
         dataset = ReferenceDataset(root, transform)
     elif which == 'multi':
-        dataset = MultiDomainDataset(root, transform_custom, train_dirs=train_dirs, min_size=[max_scale*img_size[0], max_scale*img_size[1]])
+        dataset = MultiDomainDataset(transform_custom, train_list=train_list, min_size=[max_scale*img_size[0], max_scale*img_size[1]])
     else:
         raise NotImplementedError
 
@@ -214,7 +203,39 @@ def get_train_loader(root: str , which: str='source', img_size: (int, int)=(256,
     # sampler = _make_mult_domain_balanced_sampler(dataset.targets)
     return data.DataLoader(dataset=dataset,
                            batch_size=batch_size,
+                           shuffle=True, # use shuffle or sample
                         #    sampler=sampler,
+                           num_workers=num_workers,
+                           pin_memory=True,
+                           drop_last=True)
+
+def get_ref_loader(root: str , which: str='source', img_size: (int, int)=(256, 256),
+                     batch_size: int=8, prob: float=0.5, num_workers: int=1, train_list: str=None, ref_list: str =None, imagenet_normalize: bool=True, max_scale: float=2.0):
+    print('Preparing {} DataLoader to fetch reference images '
+          'during the training phase...')
+
+    if imagenet_normalize:
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+    else:
+        mean = [0.5, 0.5, 0.5]
+        std = [0.5, 0.5, 0.5]
+    
+    transform = transforms.Compose([
+        transforms.RandomResizedCrop(img_size, scale=(0.8, 1.0)),
+        transforms.RandomHorizontalFlip(p=prob),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=mean, std=std)
+    ])
+
+    dataset = ReferenceDataset(root, transform, ref_list=ref_list, min_size=[max_scale*img_size[0], max_scale*img_size[1]])
+
+    sampler = _make_balanced_sampler(dataset.labels)
+    # sampler = _make_mult_domain_balanced_sampler(dataset.targets)
+    return data.DataLoader(dataset=dataset,
+                           batch_size=batch_size,
+                        #    shuffle=True, # use shuffle or sample
+                           sampler=sampler,
                            num_workers=num_workers,
                            pin_memory=True,
                            drop_last=True)
@@ -286,11 +307,11 @@ class InputProvider:
 
     def _fetch_refs(self):
         try:
-            x, x2, y = next(self.iter_ref)
+            x, y = next(self.iter_ref)
         except (AttributeError, StopIteration):
             self.iter_ref = iter(self.loader_ref)
-            x, x2, y = next(self.iter_ref)
-        return x, x2, y
+            x, y = next(self.iter_ref)
+        return x, y
 
     def generate_labels(self, y_src, y_trg, num_domains):
         # create one-hot label vectors
@@ -300,16 +321,17 @@ class InputProvider:
 
     def __next__(self):
         x = self._fetch_inputs()
+        # x_trg, y_trg = self._fetch_refs()
         if self.mode == 'train':
             y_trg = (torch.rand(1)*self.num_domains).int().to(self.device)
             z_trg = torch.randn(x.img.size(0), self.latent_dim)
             z_trg2 = torch.randn(x.img.size(0), self.latent_dim)
             inputs = Munch(img_src=x.img, y_src=x.domain, seg = x.seg_mask, y_trg=y_trg,
-                           z_trg=z_trg, z_trg2=z_trg2)
-        # elif self.mode == 'val':
-        #     x_ref, seg, y_ref = self._fetch_inputs()
-        #     inputs = Munch(x_src=x, y_src=x,
-        #                    x_ref=x_ref, y_ref=y_ref, seg=seg)
+                           z_trg=z_trg, z_trg2=z_trg2, bbox=x.bboxes)
+        elif self.mode == 'val':
+            x_ref, seg, y_ref = self._fetch_inputs()
+            inputs = Munch(x_src=x, y_src=x,
+                           x_ref=x_ref, y_ref=y_ref, seg=seg)
         elif self.mode == 'test':
             inputs = Munch(x=x, z=z_trg)
         else:
