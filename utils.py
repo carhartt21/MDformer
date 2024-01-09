@@ -119,8 +119,10 @@ def assign_adain_params(adain_params, model):
         m = layer[0].norm
         mean = adain_params[:, :m.num_features]
         std = adain_params[:, m.num_features:2*m.num_features]
+
         m.bias = mean.contiguous().view(-1)
         m.weight = std.contiguous().view(-1)
+
         if adain_params.size(1) > 2*m.num_features:
             adain_params = adain_params[:, 2*m.num_features:]
         n = layer[1].norm
@@ -150,9 +152,6 @@ def save_color(tensor, path, name):
         img *= 255
         # print(f'{path}/{name}_{i}.png')
         cv2.imwrite(f'{path}/{name}_{i}.png', cv2.cvtColor(np.squeeze(img.astype(np.uint8), axis=0), cv2.COLOR_BGR2RGB)) 
-
-##################################### Visualize ##################################### 
-
 
 ##################################### Visualize ##################################### 
 
@@ -218,27 +217,6 @@ def mkdir(path):
     """
     if not os.path.exists(path):
         os.makedirs(path)
-
-
-def tensor2im(input_image, imtype=np.uint8):
-    """"Converts a Tensor array into a numpy image array.
-
-    Parameters:
-        input_image (tensor) --  the input image tensor array
-        imtype (type)        --  the desired type of the converted numpy array
-    """
-    if not isinstance(input_image, np.ndarray):
-        if isinstance(input_image, torch.Tensor):  # get the data from a variable
-            image_tensor = input_image.data
-        else:
-            return input_image
-        image_numpy = image_tensor[0].clamp(-1.0, 1.0).cpu().float().numpy()  # convert it into a numpy array
-        if image_numpy.shape[0] == 1:  # grayscale to RGB
-            image_numpy = np.tile(image_numpy, (3, 1, 1))
-        image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0  # post-processing: tranpose and scaling
-    else:  # if it is a numpy array, do nothing
-        image_numpy = input_image
-    return image_numpy.astype(imtype)
 
 def copyconf(default_opt, **kwargs):
     conf = Namespace(**vars(default_opt))
@@ -328,6 +306,13 @@ class GANLoss(nn.Module):
 
 class PatchNCELoss(nn.Module):
     def __init__(self, batch_size, nce_T=0.07):
+        """
+        PatchNCELoss is a custom loss function for patch-based contrastive learning.
+
+        Args:
+            batch_size (int): The batch size of the input data.
+            nce_T (float, optional): The temperature parameter for the loss calculation. Defaults to 0.07.
+        """
         super().__init__()
         self.batch_size = batch_size
         self.nce_T = nce_T
@@ -335,24 +320,30 @@ class PatchNCELoss(nn.Module):
         self.mask_dtype = torch.uint8 if version.parse(torch.__version__) < version.parse('1.2.0') else torch.bool
 
     def forward(self, feat_q, feat_k):
+        """
+        Forward pass of the PatchNCELoss.
+
+        Args:
+            feat_q (torch.Tensor): The query features.
+            feat_k (torch.Tensor): The key features.
+
+        Returns:
+            torch.Tensor: The computed loss.
+        """
         batchSize = feat_q.shape[0] 
         dim = feat_q.shape[1] 
         feat_k = feat_k.detach()
-        # import pdb; pdb.set_trace()
 
         l_pos = torch.bmm(feat_q.view(batchSize, 1, -1), feat_k.view(batchSize, -1, 1))
         l_pos = l_pos.view(batchSize, 1)
 
         batch_dim_for_bmm = self.batch_size
 
-        # reshape features to batch size
         feat_q = feat_q.view(batch_dim_for_bmm, -1, dim)
         feat_k = feat_k.view(batch_dim_for_bmm, -1, dim)
         npatches = feat_q.size(1) 
         l_neg_curbatch = torch.bmm(feat_q, feat_k.transpose(2, 1)) 
 
-        # diagonal entries are similarity between same features, and hence meaningless.
-        # just fill the diagonal with very small number, which is exp(-10) and almost zero
         diagonal = torch.eye(npatches, device=feat_q.device, dtype=self.mask_dtype)[None, :, :]
         l_neg_curbatch.masked_fill_(diagonal, -10.0)
         l_neg = l_neg_curbatch.view(-1, npatches)
@@ -365,56 +356,54 @@ class PatchNCELoss(nn.Module):
         return loss
 
 
-class INSTNCELoss(nn.Module):
+class INSTANCENCELoss(nn.Module):
     def __init__(self, opt):
+        """
+        Initializes an instance of the INSTANCENCELoss class.
+
+        Args:
+            opt: An object containing options for the loss function.
+        """
         super().__init__()
         self.opt = opt
         self.cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction='none')
         self.mask_dtype = torch.uint8 if version.parse(torch.__version__) < version.parse('1.2.0') else torch.bool
 
-    def forward(self, feat_q, feat_k): #nce:256,256 #inst:64,256
-        #pdb.set_trace()
-        batchSize = feat_q.shape[0] #256=64*batch
-        #batchSize = feat_q.shape[0]//self.opt.batch_size #64/4=16
-        dim = feat_q.shape[1] #256
+    def forward(self, feat_q, feat_k):
+        """
+        Computes the loss for the INSTANCENCELoss.
+
+        Args:
+            feat_q: The query features.
+            feat_k: The key features.
+
+        Returns:
+            The computed loss.
+        """
+        batchSize = feat_q.shape[0]
+        dim = feat_q.shape[1]
         feat_k = feat_k.detach()
 
-        # pos logit #512,1,256 #64,1,256 * 64,256,1
         l_pos = torch.bmm(feat_q.view(batchSize, 1, -1), feat_k.view(batchSize, -1, 1))
-        l_pos = l_pos.view(batchSize, 1) #512,1,1 #64,1,1 #16,1
+        l_pos = l_pos.view(batchSize, 1)
 
-        # neg logit
-
-        # Should the negatives from the other samples of a minibatch be utilized?
-        # In CUT and FastCUT, we found that it's best to only include negatives
-        # from the same image. Therefore, we set
-        # --nce_includes_all_negatives_from_minibatch as False
-        # However, for single-image translation, the minibatch consists of
-        # crops from the "same" high-resolution image.
-        # Therefore, we will include the negatives from the entire minibatch.
         if self.opt.nce_includes_all_negatives_from_minibatch or self.opt.use_box:
-            # reshape features as if they are all negatives of minibatch of size 1.
             batch_dim_for_bmm = 1
         else:
             batch_dim_for_bmm = self.opt.batch_size
 
-        # reshape features to batch size
-        feat_q = feat_q.view(batch_dim_for_bmm, -1, dim) #2,256,256 #inst 4,16,256  #nce:4,64,256 #1,64,256
-        feat_k = feat_k.view(batch_dim_for_bmm, -1, dim) #2,256,256
-        npatches = feat_q.size(1) # r #256 #nce:64 #inst 16 #256
-        l_neg_curbatch = torch.bmm(feat_q, feat_k.transpose(2, 1))  #nce:4,64,256 #inst 4,16,16 #1,256,256
+        feat_q = feat_q.view(batch_dim_for_bmm, -1, dim)
+        feat_k = feat_k.view(batch_dim_for_bmm, -1, dim)
+        npatches = feat_q.size(1)
+        l_neg_curbatch = torch.bmm(feat_q, feat_k.transpose(2, 1))
 
-        # diagonal entries are similarity between same features, and hence meaningless.
-        # just fill the diagonal with very small number, which is exp(-10) and almost zero
-        diagonal = torch.eye(npatches, device=feat_q.device, dtype=self.mask_dtype)[None, :, :] #nce:1,64,64
-        l_neg_curbatch.masked_fill_(diagonal, -10.0) #inst 4,16,16
-        l_neg = l_neg_curbatch.view(-1, npatches) #nce:256,64 #inst 64,16
+        diagonal = torch.eye(npatches, device=feat_q.device, dtype=self.mask_dtype)[None, :, :]
+        l_neg_curbatch.masked_fill_(diagonal, -10.0)
+        l_neg = l_neg_curbatch.view(-1, npatches)
 
-        out = torch.cat((l_pos, l_neg), dim=1) / self.opt.nce_T #nce 256,65 #nce_T:0.07 l_pos:256,1 
+        out = torch.cat((l_pos, l_neg), dim=1) / self.opt.nce_T
 
         loss = self.cross_entropy_loss(out, torch.zeros(out.size(0), dtype=torch.long,
                                                         device=feat_q.device))
 
         return loss
-
-##################################### Losses ##################################### 
