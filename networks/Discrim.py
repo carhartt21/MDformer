@@ -7,7 +7,7 @@ from . import blocks
 class NLayerDiscriminator(nn.Module):
     """Defines a PatchGAN discriminator"""
 
-    def __init__(self, input_channels=3, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d, no_antialias=False):
+    def __init__(self, input_channels=3, ndf=64, n_layers=3, norm_layer=nn.BatchNorm2d, num_domains=2, no_antialias=False):
         """Construct a PatchGAN discriminator
 
         Parameters:
@@ -53,13 +53,18 @@ class NLayerDiscriminator(nn.Module):
             norm_layer(ndf * nf_mult),
             nn.LeakyReLU(0.2, True)
         ]
-
-        sequence += [nn.Conv2d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
+#TODO num_domains instead of 1 and adjust forward accordingly (add y as input)
+        sequence += [nn.Conv2d(ndf * nf_mult, num_domains, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
         self.model = nn.Sequential(*sequence)
 
-    def forward(self, input):
+    def forward(self, x, y):
         """Standard forward."""
-        return self.model(input)
+        out = self.model(x)
+        # out = out.view(out.size(0), -1)  # (batch, num_domains)
+        idx = torch.LongTensor(range(y.size(0))).to(y.device)
+        y = y.type(torch.int32)
+        out = out[:, y, :, :]  # (batch)
+        return out    
     
     #StarGan Discriminator
     class Discriminator(nn.Module):
