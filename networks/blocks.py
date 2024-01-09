@@ -122,22 +122,20 @@ class HighPass(nn.Module):
         return F.conv2d(x, filter, padding=1, groups=x.size(1))
 
 class TransformerClassifier(nn.Module):
-    def __init__(self, d_model, num_classes, pool=False):
+    def __init__(self, input_dim, num_classes, pool=False):
         super(TransformerClassifier, self).__init__()
         self.pool = pool
         self.to_latent = nn.Identity()
-        self.mlp_head = nn.Linear(d_model, num_classes)
+        self.mlp_head = nn.Linear(input_dim, num_classes)
 
     def forward(self, x):
-        # Assuming x is the input tensor with shape [batch_size, seq_length, d_model]
-        # cls_token = x[:, 0, :]  # Extract the CLS token from the input sequence
-        # cls_token = cls_token.unsqueeze(1)  # Add a dimension for compatibility with linear layer
-        # cls_token = cls_token.permute(1, 0, 2)  # Reshape for transformer input [seq_length, batch_size, d_model]
-        
-        x = self.transformer(x)
+        # x shape [batch_size, seq_length, input_dim]
+        # Extract average over all tokens or use only CLS token
         x = x.mean(dim = 1) if self.pool == 'mean' else x[:, 0]
         x = self.to_latent(x)
-        return self.mlp_head(x)
+        logits = self.mlp_head(x)
+        pred = torch.nn.Softmax(dim=-1)(logits)
+        return pred
 
 
 ####################################    Transformer   ####################################
@@ -159,21 +157,21 @@ class PositionalEncoding(nn.Module):
     """ Positional Encoding module injects information about the relative position of the tokens in the sequence.
 
     Args:
-      d_model:      dimension of embeddings
+      input_dim:      dimension of embeddings
       dropout:      randomly zeroes-out some of the input
       max_length:   max sequence length
     """
 
-    def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
-        # d_model: dimension of the model
+    def __init__(self, input_dim: int, dropout: float = 0.1, max_len: int = 5000):
+        # input_dim: dimension of the model
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 
         # Compute the positional encodings once in log space.
         position = torch.arange(max_len).unsqueeze(1)
         # 1,5000
-        div_term = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))        
-        pos_emb = torch.zeros(max_len, 1, d_model)
+        div_term = torch.exp(torch.arange(0, input_dim, 2) * (-math.log(10000.0) / input_dim))        
+        pos_emb = torch.zeros(max_len, 1, input_dim)
         # 5000,1,1024
         # calc sine on even indices
         pos_emb[:, 0, 0::2] = torch.sin(position * div_term)
