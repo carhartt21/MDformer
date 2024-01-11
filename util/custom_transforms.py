@@ -1,10 +1,15 @@
 import sys
+from einops import rearrange
 import numpy as np
 import torch
 import random
 from skimage.measure import label, regionprops
 import torchvision.transforms as transforms
 from torchvision.transforms import InterpolationMode
+from torchvision.ops import masks_to_boxes
+from torchvision.utils import draw_bounding_boxes, save_image
+import torch.nn.functional as F
+from utils import mask_to_bboxes
 
 
 class RandomCrop:
@@ -65,9 +70,6 @@ class RandomScale:
         min_scale = max(self.output_size[0]/w, self.output_size[1]/h)
         max_scale = min_scale * 1.25
         scale = random.uniform(min_scale, max_scale)
-        # new_size = (int(w * scale), int(h * scale))
-        # print("image.size: {}, scale: {}, new_size: {}, min_scale: {}, max_scale: {}".format(image.size, scale, new_size, min_scale, max_scale))
-        # new_h, new_w = int(new_h), int(new_w)
         sample.img.save('before_resize.jpg')
         sample.img = transforms.functional.resize(image, int(w * scale))
         sample.seg_mask  = transforms.functional.resize(sample.seg_mask , int(w * scale), interpolation=InterpolationMode.NEAREST)
@@ -146,7 +148,7 @@ class ToTensor:
         """
         sample.img = transforms.functional.to_tensor(sample.img)
         sample.seg_mask = transforms.functional.pil_to_tensor(sample.seg_mask)
-        sample.bboxes = torch.tensor(sample.bboxes)
+        # sample.bboxes = torch.tensor(sample.bboxes)
         return sample
 
 class SegMaskToPatches:
@@ -175,7 +177,6 @@ class SegMaskToPatches:
         Returns:
             The transformed sample.
         """
-      
         height, width = sample.seg_mask.shape[-2:]
         assert height == width, "Segmenation map height {} and width {} are not equal".format(height, width)
         assert height % self.patch_size == 0, "Segmenation map {}x{} is not divisible by patch size {}".format(height, width, self.patch_size)
@@ -209,7 +210,7 @@ class SegMaskToPatches:
 
 
 class SegMaskToBBoxes:
-    def __init__(self, fg_classes: list=[1, 7, 14], min_size: int=256, min_extent: float=0.5, max_n_bbox=8):
+    def __init__(self, fg_classes: list=[14], min_bbox_size: int=512, min_pixel = 256, min_extent: float=0.5, n_bbox=8):
         """
         Initialize SegMaskToBBoxes transform.
         fg_classes (list): The list of classes to consider as foreground.
@@ -218,9 +219,10 @@ class SegMaskToBBoxes:
         max_n_bbox (int): The maximum number of bounding boxes to return.
         """
         self.fg_classes = fg_classes
-        self.min_size = min_size
+        self.min_bbox_size = min_bbox_size
         self.min_extent = min_extent
-        self.max_n_bbox = max_n_bbox    
+        self.n_bbox = n_bbox    
+        self.min_pixel = min_pixel
 
     def __call__(self, sample):
         """
@@ -230,29 +232,44 @@ class SegMaskToBBoxes:
         Returns:
             The transformed sample.
         """
+        fg_classes = torch.tensor(self.fg_classes)
+        masks  = sample.seg_mask == fg_classes[:, None, None]
+        boxes = torch.zeros((self.n_bbox, 4))
+        i = 0
 
-        seg_mask = np.asarray(sample.seg_mask)
-        bboxes = []
-        img = sample.img
-        regions = []
-        sample.img.save('img.png')
-        for class_id in self.fg_classes:
-            class_pixels = seg_mask == class_id
-            if class_pixels.sum() > 0: 
-                labels = label(class_pixels)
-                regions += regionprops(labels)
-        # sort by area
-        while (len(bboxes) < self.max_n_bbox):
-            for prop in sorted(
-                regions,
-                key=lambda r: r.area,
-                reverse=True,
-            ):
-                if prop.area > self.min_size and prop.extent > self.min_extent:
-                    bboxes.append(prop.bbox)
-                else:
+        for mask in masks:
+            if mask.sum() < self.min_pixel:
+                continue
+
+            _boxes = mask_to_bboxes(mask, min_size=self.min_pixel, pos_thres=0.0)
+            for box in _boxes:
+                if (box[2] - box[0]) * (box[3] - box[1]) < self.min_bbox_size: 
                     continue
-        sample['bboxes'] = bboxes
+                boxes[i] = box
+                i += 1
+                if i == self.n_bbox:
+                    sample['bboxes'] = boxes
+                    return sample
+
+        sample['bboxes'] = boxes
         return sample
+    
+    
+class UnNormalize:
+    def __init__(self, mean, std):
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, tensor):
+        """
+        Args:
+            tensor (Tensor): Tensor image of size (C, H, W) to be normalized.
+        Returns:
+            Tensor: Normalized image.
+        """
+        for t, m, s in zip(tensor, self.mean, self.std):
+            t.mul_(s).add_(m)
+            # The normalize code -> t.sub_(m).div_(s)
+        return tensor    
     
 
