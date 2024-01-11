@@ -9,9 +9,146 @@ import torch
 from torch import nn
 import logging
 import sys
+import torch
+from copy import deepcopy
+import json
+
+
 
 
 ##################################### Visualize ##################################### 
+def domain_to_onehot(domain, target_domains):
+    """Convert domain name to one-hot vector."""
+    idx, n_d = get_domain_indexes([domain])
+    onehot = torch.zeros(n_d, dtype=torch.float32)
+    onehot[idx] = 1    
+    idxs, _ = get_domain_indexes(target_domains) 
+    return onehot[idxs]
+
+
+def get_domain_indexes(target_domains, domain_dict='helper/data_cfg/domain_dict.json'):
+    """
+    Get the domain indexes.
+
+    Args:
+        target_domains (List[str]): The list of target domains.
+        domain_dict (str): The path to the domain dictionary. Default is 'helper/data_cfg/domain_dict.json'.
+    Returns:
+        Dict[str, int]: A dictionary mapping each target domain to its index.
+    """
+    with open(domain_dict, 'r') as f:
+        domain_idxs = json.load(f)
+    domain_keys = [int(key) for key, value in domain_idxs.items() if value in target_domains]
+    
+    return domain_keys, len(domain_idxs)
+
+def mask_to_bboxes(bin_mask, min_size = 512, pos_thres=0.5):
+    """Cluster heatmap into discrete bounding boxes
+
+    :param torch.Tensor[H, W] bin_mask: Binary mask
+    :param float pos_thres: Threshold for assigning probability to positive class
+    :param Optional[float] nms_thres: Threshold for non-max suppression (or ``None`` to skip)
+    :param Optional[float] score_thres: Threshold for final bbox scores (or ``None`` to skip)
+    :return Tuple[torch.Tensor]: Containing
+        * bboxes[N, C=4]: bounding box coordinates in ltrb format
+        * scores[N]: confidence scores (averaged across all pixels in the box)
+    """
+
+    def get_roi(data, bounds):
+        """Extract region of interest from a tensor
+
+        :param torch.Tensor[H, W] data: Original data
+        :param dict bounds: With keys for left, right, top, and bottom
+        :return torch.Tensor[H', W']: Subset of the original data
+        """
+        compound_slice = (
+            slice(bounds['top'], bounds['bottom']),
+            slice(bounds['left'], bounds['right']))
+        return data[compound_slice]
+
+    def is_covered(x, y, bbox):
+        """Determine whether a point is covered/inside a bounding box
+
+        :param int x: Point x-coordinate
+        :param int y: Point y-coordinate
+        :param torch.Tensor[int(4)] bbox: In ltrb format
+        :return bool: Whether all boundaries are satisfied
+        """
+        left, top, right, bottom = bbox
+        bounds = [
+            x >= left,
+            x <= right,
+            y >= top,
+            y <= bottom]
+        return all(bounds)
+    
+
+    # Determine indices of each positive pixel
+    # bin_mask = heatmap
+    # bin_mask = torch.where(heatmap == 1, 1, 0)
+    mask = torch.ones(bin_mask.size()).type_as(bin_mask)
+    idxs = torch.flip(torch.nonzero(bin_mask*mask), [1])
+    heatmap_height, heatmap_width = bin_mask.shape
+
+    # Limit potential expansion to the heatmap boundaries
+    edge_names = ['left', 'top', 'right', 'bottom']
+    limits = {
+        'left': 0,
+        'top': 0,
+        'right': heatmap_width,
+        'bottom': heatmap_height}
+    bboxes = []
+    scores = []
+
+    # Iterate over positive pixels
+    for x, y in idxs:
+
+        # Skip if an existing bbox already covers this point
+        already_covered = False
+        for bbox in bboxes:
+            if is_covered(x, y, bbox):
+                already_covered = True
+                break
+        if already_covered:
+            continue
+
+        incrementers = {k: 1 for k in edge_names}
+        max_bounds = {
+            'left': deepcopy(x),
+            'top': deepcopy(y),
+            'right': deepcopy(x),
+            'bottom': deepcopy(y)}
+        while True:
+
+            # Extract the new, expanded ROI around the current (x, y) point
+            bounds = {
+                'left': max(limits['left'], x - incrementers['left']),
+                'top': max(limits['top'], y - incrementers['top']),
+                'right': min(limits['right'], x + incrementers['right'] + 1),
+                'bottom': min(limits['bottom'], y + incrementers['bottom'] + 1)}
+            roi = get_roi(bin_mask, bounds)
+
+            # Get the vectors along each edge
+            edges = {
+                'left': roi[:, 0],
+                'top': roi[0, :],
+                'right': roi[:, -1],
+                'bottom': roi[-1, :]}
+
+            keep_going = False
+            for k, v in edges.items():
+                if v.sum()/v.numel() > pos_thres and limits[k] != max_bounds[k]:
+                    keep_going = True
+                    max_bounds[k] = bounds[k]
+                    incrementers[k] += 1
+
+            if not keep_going:
+                final_roi = get_roi(bin_mask, max_bounds)
+                if final_roi.numel() > min_size:
+                    bboxes.append([max_bounds[k] - 1 if i > 1 else max_bounds[k] 
+                                   for i, k in enumerate(edge_names)])
+                break
+    return torch.tensor(bboxes)
 
 def save_component(log_path, model_name, epoch, model, optimizer, net_name='G'):
     """Save model and optimizer."""
@@ -150,7 +287,6 @@ def save_color(tensor, path, name):
     color = np.split(tensor.clone().detach().permute(0,2,3,1).cpu().numpy(), tensor.shape[0], axis=0)
     for i, img in enumerate(color):
         img *= 255
-        # print(f'{path}/{name}_{i}.png')
         cv2.imwrite(f'{path}/{name}_{i}.png', cv2.cvtColor(np.squeeze(img.astype(np.uint8), axis=0), cv2.COLOR_BGR2RGB)) 
 
 ##################################### Visualize ##################################### 
