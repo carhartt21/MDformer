@@ -5,7 +5,7 @@ from yacs.config import CfgNode as CN
 # -----------------------------------------------------------------------------
 
 _C = CN()
-_C.DIR = "./weights"
+_C.DIR = './weights'
 
 # -----------------------------------------------------------------------------
 # Dataset
@@ -13,13 +13,15 @@ _C.DIR = "./weights"
 # dataset name
 _C.DATASET = CN()
 # dataset mode (e.g., single, aligned, unaligned, multi)
-_C.DATASET.mode = "multi"
+_C.DATASET.mode = 'multi'
 # path to images (should have subfolders images, seg_labels, domain_labels)
-_C.DATASET.root_dataset = "./data/"
+_C.DATASET.root_dataset = './data/'
 # txt file containing training image folder
-_C.DATASET.train_list = "./data/train_list.txt"
-# txt file containing referenc image folder
-_C.DATASET.ref_list = "./data/ref_list.txt"
+_C.DATASET.train_list = './config/train_list.txt'
+# path to the reference images
+_C.DATASET.ref_path = './data/'
+# List of target domains
+_C.DATASET.target_domains = ['summer', 'winter', 'spring', 'autumn']
 # number of semantic classes 
 _C.DATASET.num_seg_class = 16
 # number of domains
@@ -27,7 +29,7 @@ _C.DATASET.num_domains = 8
 # maximum number of images per folder
 _C.DATASET.max_dataset_size = 200000
 # Maximum number of object boxes per image
-_C.DATASET.n_bbox_max = -1
+_C.DATASET.n_bbox = -1
 # enable random flip during training
 _C.DATASET.random_flip = True
 
@@ -36,15 +38,15 @@ _C.DATASET.random_flip = True
 # -----------------------------------------------------------------------------
 _C.MODEL = CN()
 # name of the model
-_C.MODEL.name = "MDformer"
+_C.MODEL.name = 'MDformer'
 # load pretrained weights, False if training from scratch
 _C.MODEL.load_weight = False
 # load optimizer, False if training from scratch
 _C.MODEL.load_optimizer = False
 # path of pretrained weights. If training from scratch, set this as empty string
-_C.MODEL.weight_path = ""
+_C.MODEL.weight_path = ''
 # weights to finetune net_decoder
-# _C.MODEL.weights_decoder = ""
+# _C.MODEL.weights_decoder = ''
 # number of input channels
 _C.MODEL.in_channels = 3
 # number of feature channels between encoder and decoder
@@ -113,7 +115,7 @@ _C.TRAIN.end_epoch = 300
 # iterations of each epoch (irrelevant to batch size)
 _C.TRAIN.epoch_iters = 5000
 # optimizer
-_C.TRAIN.optim = "Adam"
+_C.TRAIN.optim = 'Adam'
 # momentum terms for Adam optimizer
 _C.TRAIN.optim_beta = (0.5, 0.999)
 # learning rate
@@ -156,7 +158,7 @@ _C.TRAIN.use_cuda = True
 # IDs of GPUs to use (e.g. [0, 1, 2] | use -1 for CPU)
 _C.TRAIN.gpu_ids = [0]
 # output path for log, weights and intermediate results
-_C.TRAIN.log_path = "./weights"
+_C.TRAIN.log_path = './weights'
 # distributed training
 _C.TRAIN.distributed = False
 
@@ -201,11 +203,11 @@ _C.VISDOM.display_ncols = 4
 # window id of the web display
 _C.VISDOM.display_id = -1
 # visdom server
-_C.VISDOM.server = "http://localhost"
+_C.VISDOM.server = 'http://localhost'
 # visdom port
 _C.VISDOM.port = 8097
 # name of the visdom workspace
-_C.VISDOM.env = "main"
+_C.VISDOM.env = 'main'
 # frequency to save visualization results
 _C.VISDOM.save_epoch_freq = 1000
 # save intermediate training results to disk as html
@@ -220,7 +222,7 @@ _C.VAL.batch_size = 1
 # output visualization during validation
 _C.VAL.visualize = False
 # the checkpoint to evaluate on
-_C.VAL.checkpoint = "epoch_20.pth"
+_C.VAL.checkpoint = 'epoch_20.pth'
 
 # -----------------------------------------------------------------------------
 # Testing
@@ -229,6 +231,6 @@ _C.TEST = CN()
 # currently only supports 1
 _C.TEST.batch_size = 1
 # the checkpoint to test on
-_C.TEST.checkpoint = "epoch_20.pth"
+_C.TEST.checkpoint = 'epoch_20.pth'
 # folder to output visualization results
-_C.TEST.result = "./"
+_C.TEST.result = './'
