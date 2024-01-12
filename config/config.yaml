@@ -4,6 +4,7 @@ TRAIN:
   seed: 42
   start_epoch: 0 # if resume, set this as a number
   end_epoch: 200 # number of epochs of training
+  #contnue here
   batch_size_per_gpu: 4 # input batch size
   num_workers: 5 # # threads for loading data
   lr: 2e-4 # initial learning rate for adam
@@ -19,6 +20,7 @@ TRAIN:
   save_epoch: 5 # frequency of saving checkpoints at the end of epochs
   image_save_iter: 200 # frequency of saving the latest training images
   print_freq: 100 # frequency of showing training results on console
+  distributed: False # if true use multiprocess distributed training
   gpu_ids: [0] # gpu ids: e.g. 0, 1, 2. use -1 for CPU
 
 MODEL:
@@ -32,21 +34,49 @@ MODEL:
   patch_size: 8 # patch size
   num_neg: 64 # number of negative samples
   num_pos: 1 # number of positive samples
-  img_size: (352, 352) # scale images to this size
+  img_size: (384, 384) # scale images to this size
+  fc_dim : 2048
+  # Style code dimension
+  style_dim : 64
+  # Latent code dimension
+  latent_dim : 16
+  # dimension of the semantic embedding
+  sem_embed_dim : 64
+  # Mapping Network hidden dimension
+  hidden_dim : 1088
+  # number of content channels
+  content_dim : 256
+  # number of downsampling layers in the content encoder
+  n_downsampling : 2
+  # number of input filters of the generator
+  n_generator_filters : 64
+  # number of discriminator filters
+  n_discriminator_filters : 64
+  TRANSFORMER:
+    # number of input channels of the transformer
+    embed_C : 1024
+    # number of feature channels of the transformer
+    feat_C : 256
+    # number of transformer layers
+    depth : 6
+    # number of heads in each transformer layer
+    heads : 4
+    # dimension of each head
+    mlp_dim : 4352
+
 
 
 
 DATASET:
-  name: 'init'
-  mode: 'multi' # specifies how datasets are loaded. [unaligned | aligned | single | colorization]')
-  dir_A: 'dataset/sunny_warm' # path of dataset_A
-  dir_B: 'dataset/snow_cold' # path of dataset_A
-  n_bbox: -1 # # box
-  max_dataset_size: 20000 # Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.
+  target_domains: ['summer', 'winter', 'spring', 'autumn'] # domains to be used for training
+  ref_path: '/media/chge7185/HDD1/datasets/MDformer/ref_images' # path of reference images
+  train_list: 'config/train_list.txt' # path of input images
+  n_bbox: 4 # # box
+  max_dataset_size: 100000 # Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.
   
 
 VISDOM:
-  enabled: False # visualize the training process using visdom
+  enabled: True # visualize the training process using visdom
   display_winsize: 256 # visdom display size
   display_freq: 400 # frequency of showing training results on screen
   display_ncols:  4 # if positive, display all images in a single visdom web panel with certain number of images per row.

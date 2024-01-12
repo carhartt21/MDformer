@@ -16,7 +16,6 @@ import utils
 import initialize
 import loss
 from visualizer import Visualizer
-import logging
 from collections import OrderedDict
 from data import create_dataset
 from util.config import cfg
@@ -32,7 +31,7 @@ parser.add_argument("--conf", type=str, help="configuration file path", default=
 args = parser.parse_args()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger()
 
 if __name__ == "__main__":
@@ -149,7 +148,6 @@ if __name__ == "__main__":
             inputs = next(input_provider)
             refs = next(ref_provider, inputs.d_src)
             # get a new target sample if the domain of target and source is same
-            logger.info("domain vectors: %s, %s", inputs.d_src, refs.d_trg)
             for key, val in inputs.items():
                 if isinstance(val, torch.Tensor):
                     inputs[key] = val.to(device)
@@ -159,7 +157,7 @@ if __name__ == "__main__":
             
 
             # Model Forward
-            fake_img, fake_box, features, d_src_pred = loss.model_forward_generation(inputs=inputs,
+            fake_img, fake_box, features, d_pred = loss.model_forward_generation(inputs=inputs,
                                                                                      refs = refs,
                                                                                      model=model_G,
                                                                                      n_bbox=cfg.DATASET.n_bbox,
@@ -170,8 +168,8 @@ if __name__ == "__main__":
                                                                     feat_layers=cfg.MODEL.feat_layers)
             else:
                 fake_img_2 = torch.empty(1).to(device)
-            recon_img, style_code = loss.model_forward_reconstruction(inputs=inputs, targets=targets, fake_img=fake_img,
-                                                                      model=model_G, d_src_pred=d_src_pred,
+            recon_img, style_code = loss.model_forward_reconstruction(inputs=inputs, fake_img=fake_img,
+                                                                      model=model_G, d_pred=d_pred,
                                                                       feat_layers=cfg.MODEL.feat_layers)
             if cfg.DATASET.n_bbox > 0 and len(features) > len(cfg.MODEL.feat_layers):
                 features, box_feature = features[:-1], features[-1]
@@ -182,7 +180,7 @@ if __name__ == "__main__":
                 if cfg.TRAIN.w_NCE != 0.0:
                     model_F['MLP_head'].module.module.create_mlp(feats=features, device=device)
                 if (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0):
-                    model_F['MLP_head_inst'].create_mlp(feats=[box_feature], device=device)
+                    model_F['MLP_head_inst'].module.module.create_mlp(feats=[box_feature], device=device)
 
                 parameter_F = []
                 for key, val in model_F.items():
@@ -198,7 +196,7 @@ if __name__ == "__main__":
             # Discriminator
             utils.set_requires_grad(model_D['Discrim'].module, True)
             optimizer_D.zero_grad()
-            total_D_loss, D_losses = loss.compute_D_loss(inputs=inputs, fake_img=fake_img, model_D=model_D,
+            total_D_loss, D_losses = loss.compute_D_loss(inputs=inputs, refs=refs, fake_img=fake_img, model_D=model_D,
                                                          criterions=criterions)
             total_D_loss.backward()
             optimizer_D.step()
@@ -207,7 +205,7 @@ if __name__ == "__main__":
             utils.set_requires_grad(model_D['Discrim'].module, False)
             optimizer_G.zero_grad()
             optimizer_F.zero_grad()
-            total_G_loss, G_losses = loss.compute_G_loss(inputs, fake_imgs, recon_img, style_code, features,
+            total_G_loss, G_losses = loss.compute_G_loss(inputs, refs, fake_imgs, recon_img, style_code, features,
                                                          box_feature, model_G, model_D, model_F, criterions, cfg)
             total_G_loss.backward()
             optimizer_G.step()

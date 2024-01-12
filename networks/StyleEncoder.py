@@ -1,3 +1,4 @@
+import logging
 import math
 import numpy as np
 import torch
@@ -93,7 +94,8 @@ class MLP(nn.Module):
         self.model = nn.Sequential(*self.model)
 
     def forward(self, x):
-        return self.model(x.view(x.size(0), -1))
+        test = self.model(x.view(x.size(0), -1))
+        return test
     
 #from StarGAN v2
 class MappingNetwork(nn.Module):
@@ -124,6 +126,7 @@ class MappingNetwork(nn.Module):
         for layer in self.unshared:
             out += [layer(h)]
         out = torch.stack(out, dim=1)  # (batch, num_domains, style_dim)
-        # idx = torch.LongTensor(range(out.size(0))).to(y.device)
-        s = out[:, y, :]  # (batch, style_dim)
+        idx = torch.LongTensor(range(out.size(0))).to(y.device)
+        y = torch.argmax(y, dim=1)
+        s = out[idx, y, :]  # (batch, style_dim)
         return s    

@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import logging
 
 from . import blocks
 
@@ -38,6 +39,8 @@ class Generator(nn.Module):
         self.model = nn.Sequential(*model)
         
     def forward(self, x, box_info=None):
+        # remove the first token [<cls>]
+        x = x[:, 1:, :]
         if box_info==None:
             out = self.model(self.inv_patch_embed(x))
         else:
@@ -47,7 +50,7 @@ class Generator(nn.Module):
             box_index_list = []
 
             for i in range(B_i):
-                out_box_filtered = x[i][torch.where(box_info[i,:,0] != -1)]
+                out_box_filtered = x[i][torch.where(box_info[i,:,0] != 0)]
                 box_index = out_box_filtered.shape[0]
                 box_index_list.append(box_index) 
                 if not(box_index == 0):            

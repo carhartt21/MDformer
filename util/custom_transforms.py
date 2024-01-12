@@ -10,6 +10,7 @@ from torchvision.ops import masks_to_boxes
 from torchvision.utils import draw_bounding_boxes, save_image
 import torch.nn.functional as F
 from utils import mask_to_bboxes
+import logging
 
 
 class RandomCrop:
@@ -147,7 +148,7 @@ class ToTensor:
             The transformed sample.
         """
         sample.img = transforms.functional.to_tensor(sample.img)
-        sample.seg_mask = transforms.functional.pil_to_tensor(sample.seg_mask)
+        sample.seg_mask = transforms.functional.to_tensor(sample.seg_mask).to(torch.int32)
         # sample.bboxes = torch.tensor(sample.bboxes)
         return sample
 
@@ -177,17 +178,17 @@ class SegMaskToPatches:
         Returns:
             The transformed sample.
         """
-        height, width = sample.seg_mask.shape[-2:]
-        assert height == width, "Segmenation map height {} and width {} are not equal".format(height, width)
+        height, width = sample.seg_mask.shape[-2]//4, sample.seg_mask.shape[-1]//4
+        assert height == width, "Segmentation map height {} and width {} are not equal".format(height, width)
         assert height % self.patch_size == 0, "Segmenation map {}x{} is not divisible by patch size {}".format(height, width, self.patch_size)
 
         n_patches = (height // self.patch_size)
-        # Get list of unique classes in the segmentation map
-        _classes = torch.unique(sample.seg_mask, sorted=True)
+        # Get list of unique classes in the segmentation map excluding 0
+        _classes = torch.unique(sample.seg_mask[sample.seg_mask != 0], sorted=True)
         # Calculate the minimum number of pixels that should be covered by the segmentation map in each patch
         min_pixels = self.patch_size ** 2 * self.min_coverage
         # Create a grid to hold the classes assigned to each patch
-        grid = torch.full((n_patches, n_patches), -1, dtype=torch.int16)
+        grid = torch.zeros((n_patches, n_patches), dtype=torch.int32)
 
         # Iterate over each cell in the grid
         for i in range(n_patches):
@@ -205,7 +206,7 @@ class SegMaskToPatches:
                     if pixels_covered >= min_pixels:
                         grid[i, j] = c
 
-        sample.seg_mask= grid.view(-1)
+        sample.seg_mask= grid.view(-1).to(torch.int32)
         return sample
 
 
@@ -223,6 +224,7 @@ class SegMaskToBBoxes:
         self.min_extent = min_extent
         self.n_bbox = n_bbox    
         self.min_pixel = min_pixel
+        self.boxes = torch.zeros((self.n_bbox, 5))
 
     def __call__(self, sample):
         """
@@ -233,27 +235,28 @@ class SegMaskToBBoxes:
             The transformed sample.
         """
         fg_classes = torch.tensor(self.fg_classes)
-        masks  = sample.seg_mask == fg_classes[:, None, None]
-        boxes = torch.zeros((self.n_bbox, 4))
-        i = 0
-
-        for mask in masks:
-            if mask.sum() < self.min_pixel:
-                continue
-
-            _boxes = mask_to_bboxes(mask, min_size=self.min_pixel, pos_thres=0.0)
-            for box in _boxes:
-                if (box[2] - box[0]) * (box[3] - box[1]) < self.min_bbox_size: 
+        _classes = torch.unique(sample.seg_mask[sample.seg_mask != 0], sorted=True)
+        i = 0        
+        for c in fg_classes:
+            if c in _classes:
+                mask  = sample.seg_mask == c
+                save_image(mask.float(), 'output/mask_{}.png'.format(c))
+                if mask.sum() < self.min_pixel:
                     continue
-                boxes[i] = box
-                i += 1
-                if i == self.n_bbox:
-                    sample['bboxes'] = boxes
-                    return sample
 
-        sample['bboxes'] = boxes
+                _boxes = mask_to_bboxes(mask.squeeze(), min_size=self.min_pixel, pos_thres=0.0)
+                for box in _boxes:
+                    if (box[2] - box[0]) * (box[3] - box[1]) < self.min_bbox_size: 
+                        continue
+                    self.boxes[i] = torch.cat([torch.Tensor([c]).to(box.dtype), box])
+                    i += 1
+                    if i == self.n_bbox:
+                        sample['bboxes'] = self.boxes
+                        return sample
+
+        sample['bboxes'] = self.boxes
         return sample
-    
+
     
 class UnNormalize:
     def __init__(self, mean, std):

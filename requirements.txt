@@ -13,3 +13,4 @@ torch
 torchvision
 tqdm==4.66.1
 visdom==0.2.4
+yacs==0.1.8

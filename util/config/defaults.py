@@ -67,8 +67,10 @@ _C.MODEL.img_size = (352, 352)
 _C.MODEL.style_dim = 64
 # Latent code dimension
 _C.MODEL.latent_dim = 16
+# dimension of the semantic embedding
+_C.MODEL.sem_embed_dim = 64
 # Mapping Network hidden dimension
-_C.MODEL.hidden_dim = 1024
+_C.MODEL.hidden_dim = 1088
 # number of content channels
 _C.MODEL.content_dim = 256
 # number of downsampling layers in the content encoder
@@ -82,7 +84,7 @@ _C.MODEL.n_discriminator_filters = 64
 # ------------------------------------------------------------------------------
 _C.MODEL.TRANSFORMER = CN()
 # number of input channels of the transformer
-_C.MODEL.TRANSFORMER.embed_C = 1024
+_C.MODEL.TRANSFORMER.embed_C = 1088
 # number of feature channels of the transformer
 _C.MODEL.TRANSFORMER.feat_C = 256
 # number of transformer layers

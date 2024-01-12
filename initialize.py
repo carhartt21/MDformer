@@ -18,6 +18,7 @@ from data.single_dataset import SingleDataset
 import utils
 import networks
 from typing import Any, Dict, List, Tuple, Union
+from torch.nn.parallel import DataParallel
 
 logging.basicConfig(level=logging.INFO)
 
@@ -71,40 +72,43 @@ def build_model(model_cfg, device, distributed=False, num_domains=8):
     # logging.info("domain_idxs : {}".format(domain_idxs))
 
 
-    model_G['ContentEncoder'] = networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling)
+    model_G['ContentEncoder'] = DataParallel(networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling))
 
-    model_G['StyleEncoder'] = networks.StyleEncoder(input_channels=model_cfg.in_channels, 
-                                                    n_generator_filters=model_cfg.n_generator_filters, 
-                                                    style_dim=model_cfg.style_dim, 
-                                                    num_domains=num_domains)
+    model_G['StyleEncoder'] = DataParallel(networks.StyleEncoder(input_channels=model_cfg.in_channels, 
+                                                        n_generator_filters=model_cfg.n_generator_filters, 
+                                                        style_dim=model_cfg.style_dim, 
+                                                        num_domains=num_domains))
 
-    model_G['Transformer'] = networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
-                                                             patch_size=model_cfg.patch_size, 
-                                                             embed_C=model_cfg.TRANSFORMER.embed_C, 
-                                                             feat_C=model_cfg.n_generator_filters*2**(model_cfg.n_downsampling), 
-                                                             depth=model_cfg.TRANSFORMER.depth, 
-                                                             heads=model_cfg.TRANSFORMER.heads, 
-                                                             mlp_dim=model_cfg.TRANSFORMER.mlp_dim)
-    model_G['MLP_Adain'] = networks.MLP(input_dim=model_cfg.style_dim, output_dim=2048)
+    model_G['Transformer'] = DataParallel(networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
+                                                                 patch_size=model_cfg.patch_size, 
+                                                                 patch_embed_C=model_cfg.TRANSFORMER.embed_C, 
+                                                                 sem_embed_C=model_cfg.sem_embed_dim,
+                                                                 feat_C=model_cfg.n_generator_filters*2**(model_cfg.n_downsampling), 
+                                                                 depth=model_cfg.TRANSFORMER.depth, 
+                                                                 heads=model_cfg.TRANSFORMER.heads, 
+                                                                 mlp_dim=model_cfg.TRANSFORMER.mlp_dim))
 
-    model_G['DomainClassifier'] = networks.TransformerClassifier(input_dim=model_cfg.TRANSFORMER.embed_C, num_classes=num_domains)
+    model_G['DomainClassifier'] = DataParallel(networks.TransformerClassifier(input_dim=model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim, num_classes=num_domains))
 
-    model_G['Generator'] = networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
-                                              patch_size=model_cfg.patch_size, 
-                                              embed_C=model_cfg.TRANSFORMER.embed_C, 
-                                              feat_C=model_cfg.TRANSFORMER.feat_C, 
-                                              n_generator_filters=model_cfg.n_generator_filters,
-                                              n_downsampling=model_cfg.n_downsampling)
+    model_G['Generator'] = DataParallel(networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
+                                                  patch_size=model_cfg.patch_size, 
+                                                  embed_C=model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim, 
+                                                  feat_C=model_cfg.TRANSFORMER.feat_C, 
+                                                  n_generator_filters=model_cfg.n_generator_filters,
+                                                  n_downsampling=model_cfg.n_downsampling))
 
-    model_G['MappingNetwork'] = networks.MappingNetwork(num_domains=num_domains, 
-                                                        latent_dim=model_cfg.latent_dim,
-                                                        style_dim=model_cfg.style_dim)
+    model_G['MLP_Adain'] = DataParallel(networks.MLP(input_dim=model_cfg.style_dim, output_dim=2176))
 
 
-    model_D['Discrim'] = networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3, num_domains=num_domains)
+    model_G['MappingNetwork'] = DataParallel(networks.MappingNetwork(num_domains=num_domains, 
+                                                            latent_dim=model_cfg.latent_dim,
+                                                            style_dim=model_cfg.style_dim))
 
-    model_F['MLP_head'] = networks.MLP_Head()
-    model_F['MLP_head_inst'] = networks.MLP_Head()
+
+    model_D['Discrim'] = DataParallel(networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3, num_domains=num_domains))
+
+    model_F['MLP_head'] = DataParallel(networks.MLP_Head())
+    model_F['MLP_head_inst'] = DataParallel(networks.MLP_Head())
 
     # model_G['ContentEncoder'] = DDP(networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling))
     

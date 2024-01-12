@@ -10,6 +10,9 @@ __pycache__/
 dataset/
 weights/
 share/
+test_dataset/
+output/
+helper/ref_images/
 
 # Distribution / packaging
 .Python

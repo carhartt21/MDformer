@@ -1,6 +1,6 @@
 import math
 from networkx import spectral_ordering
-
+import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -157,7 +157,7 @@ class PositionalEncoding(nn.Module):
     """ Positional Encoding module injects information about the relative position of the tokens in the sequence.
 
     Args:
-      input_dim:      dimension of embeddings
+      input_dim:    dimension of embeddings
       dropout:      randomly zeroes-out some of the input
       max_length:   max sequence length
     """
@@ -178,6 +178,9 @@ class PositionalEncoding(nn.Module):
         # 5000,1,1024
         # calc cosine on odd indices       
         pos_emb[:, 0, 1::2] = torch.cos(position * div_term)
+
+        pos_emb = pos_emb.permute(1, 0, 2)
+
         # registered buffers are saved in state_dict but not trained by the optimizer           
         self.register_buffer('pos_emb', pos_emb)
 
@@ -185,7 +188,7 @@ class PositionalEncoding(nn.Module):
         """ 
         Forward pass of PositionalEncoding module.
         """
-        self.pos_emb = self.pos_emb.permute(1, 0, 2)
+        # self.pos_emb = self.pos_emb.permute(1, 0, 2)
         return self.dropout(self.pos_emb)
     
 
@@ -208,6 +211,7 @@ class AdaptiveInstanceNorm2d(nn.Module):
         # weight and bias are dynamically assigned
         self.weight = None
         self.bias = None
+        num_features = num_features
         # just dummy buffers, not used
         self.register_buffer('running_mean', torch.zeros(num_features))
         self.register_buffer('running_var', torch.ones(num_features))
@@ -449,7 +453,7 @@ class PatchEmbedding(nn.Module):
     Patch embedding layer used in Vision Transformer (https://arxiv.org/abs/2010.11929)
     """
 
-    def __init__(self, input_size=64, patch_size=8, in_chans=256, embed_dim=768, norm_layer=None, STEM=True):
+    def __init__(self, input_size=96, patch_size=8, in_chans=256, embed_dim=768, norm_layer=None, STEM=True):
         super().__init__()
         # image and patch size to tuple of 2 integers
         input_size = to_2tuple(input_size)
@@ -482,28 +486,63 @@ class PatchEmbedding(nn.Module):
         #proj:120,1024,1,1  fl:120,1024,1 tr:120,1,1024
         x = self.norm(x)
         return x
-    
+
+# TODO: test different embedding sizes
 class SemanticEmbedding(nn.Module):
-    def __init__(self, in_dim: int=64, input_size: int = 88, patch_size: int = 8, cls_labels: list=[], out_dim: int=256):
+    def __init__(self, num_sem_classes, embed_dim):
         super().__init__()
-        input_size = to_2tuple(input_size)
-        patch_size = to_2tuple(patch_size)
-        self.input_size = input_size
-        self.patch_size = patch_size
-        self.fc = nn.Linear(in_dim, out_dim)
-        self.norm = LayerNorm(out_dim)
-        self.grid_size = (input_size[0] // patch_size[0], input_size[1] // patch_size[1])
-        self.num_patches = self.grid_size[0] * self.grid_size[1]        
+        self.embedding = nn.Embedding(num_sem_classes, embed_dim)
+
+    def forward(self, x, semantic_class):
+        semantic_emb = self.embedding(semantic_class.to(torch.long))
+        x = torch.cat([x, semantic_emb], dim=-1)
+        return x
     
+####################################    Aggregator   ####################################
+
+
+####################################    Generator   ####################################
+
+class Transpose(nn.Module):
+    # Transpose layer; dim0 and dim1 are the dimension to be swapped
+    def __init__(self, dim0, dim1):
+        super(Transpose, self).__init__()
+        self.dim0 = dim0
+        self.dim1 = dim1
+
     def forward(self, x):
-        x = self.fc(x)
+        x = x.transpose(self.dim0, self.dim1)
+        return x
+    
+class Upsample(nn.Module):
+    # Upsample the image by a factor of stride, channels is the number of channels in the input image
+    def __init__(self, channels, pad_type='repl', filt_size=4, stride=2):
+        super(Upsample, self).__init__()
+        self.filt_size = filt_size
+        self.filt_odd = np.mod(filt_size, 2) == 1
+        self.pad_size = int((filt_size - 1) / 2)
+
+
+class SimplePatchEmbedding(nn.Module):
+    """ 2D Image to Patch Embedding. 
+    Patch embedding layer used in Vision Transformer (https://arxiv.org/abs/2010.11929)
+    """
+
+    def __init__(self, input_size=64, patch_size=8, in_chans=256, embed_dim=768, norm_layer=None, STEM=True):
+        super(PatchEmbedding, self).__init__()
+        self.input_size = input_size
+        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
+        self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
+
+    def forward(self, x): #x: b*2,256,64,64 / b*2*30,256,8,8
+        _, _, H, W = x.shape
+        assert H == self.input_size[0] and W == self.input_size[1], \
+            "Input image size ({}*{}) doesn't match model ({}*{})".format(H, W, self.input_size[0], self.input_size[1])
+        x = self.proj(x).flatten(2).transpose(1, 2) 
+        #proj:4,1024,8,8 #fl:4,1024,64
+        #proj:120,1024,1,1  fl:120,1024,1 tr:120,1,1024
         x = self.norm(x)
         return x
-
-    def create_embedded_token(self, x, c):
-        # Create an embedded token based on input tensor x and semantic class c
-        embedded_token = torch.cat((x, c), dim=1)
-        return embedded_token
 
 ####################################    Aggregator   ####################################
 

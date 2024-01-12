@@ -4,8 +4,12 @@ import cv2
 from PIL import Image
 from PIL import Image, ImageDraw
 import matplotlib.pyplot as plt
+import json
+import argparse
+from helper_utils import colorEncode, find_recursive
+from os.path import isdir
 
-def map_segmentation_to_grid(segmentation_map, m, min_coverage):
+def map_segmentation_to_grid(segmentation_map, patch_size, min_coverage):
     """
     Maps a segmentation map onto a grid of cells.
 
@@ -17,37 +21,31 @@ def map_segmentation_to_grid(segmentation_map, m, min_coverage):
     Returns:
         numpy.ndarray: A 2D numpy array representing the grid with the segmentation map mapped onto it.
     """
-    
-    # Get the dimensions of the segmentation map
     height, width = segmentation_map.shape
-    
-    # Calculate the size of each grid cell
-    cell_size = height // m
-    
-    # Calculate the number of cells in the grid
-    n_cells = m * m
 
+    assert height % patch_size == 0, "Segmenation map height {} is not divisible by patch size {}".format(height, patch_size)
+    assert width % patch_size == 0, "Segmenation map width {} is not divisible by patch size {}".format(width, patch_size)
+
+    n_patches = (height // patch_size) * (width // patch_size)
+    
+    # Get list of unique classes in the segmentation map
     _classes = np.unique(segmentation_map)
-    print('_classes: {}'.format(_classes))
-    
-    # Calculate the total number of pixels in the segmentation map
-    cell_pixels = cell_size * cell_size
-    
-    # Calculate the minimum number of pixels that should be covered by the segmentation map in each cell of the grid
-    min_pixels = cell_pixels * min_coverage
+
+    # Calculate the minimum number of pixels that should be covered by the segmentation map in each patch
+    min_pixels = patch_size ** 2 * min_coverage
     
     # Create an empty grid to map the segmentation onto
     grid = np.full((height, width), 255)
     # empty_array = np.full((height, width), 255)
     
     # Iterate over each cell in the grid
-    for i in range(m):
-        for j in range(m):
+    for i in range(n_patches):
+        for j in range(n_patches):
             # Calculate the bounds of the current cell
-            top = i * cell_size
-            bottom = (i + 1) * cell_size
-            left = j * cell_size
-            right = (j + 1) * cell_size
+            top = i * patch_size
+            bottom = (i + 1) * patch_size
+            left = j * patch_size
+            right = (j + 1) * patch_size
             
             # Iterate over each class in the segmentation map
             for c in _classes:
@@ -60,52 +58,11 @@ def map_segmentation_to_grid(segmentation_map, m, min_coverage):
     
     return grid
 
-def color_encode(segmentation_map):
-    # Define the colors for each class
-    colors = {
-        0: [0, 0, 0],        # background
-        1: [128, 0, 0],      # aeroplane
-        2: [0, 128, 0],      # bicycle
-        3: [128, 128, 0],    # bird
-        4: [0, 0, 128],      # boat
-        5: [128, 0, 128],    # bottle
-        6: [0, 128, 128],    # bus
-        7: [128, 128, 128],  # car
-        8: [64, 0, 0],       # cat
-        9: [192, 0, 0],      # chair
-        10: [64, 128, 0],    # cow
-        11: [192, 128, 0],   # diningtable
-        12: [64, 0, 128],    # dog
-        13: [192, 0, 128],   # horse
-        14: [64, 128, 128],  # motorbike
-        15: [192, 128, 128], # person
-        16: [0, 64, 0],      # potted plant
-        17: [128, 64, 0],    # sheep
-        18: [0, 192, 0],     # sofa
-        19: [128, 192, 0],   # train
-        20: [0, 64, 128],    # tv/monitor
-        21: [224, 224, 192], # wall
-        22: [224, 224, 0],   # window
-        23: [224, 0, 224],   # wood
-        24: [0, 224, 224],   # person (difficult)
-        25: [224, 0, 0]      # car (difficult)
-    }
-    
-    # Create an empty color-encoded image
-    height, width = segmentation_map.shape
-    color_encoded = np.zeros((height, width, 3), dtype=np.uint8)
-    
-    # Iterate over each class in the segmentation map and assign the corresponding color to each pixel
-    for c in colors:
-        color_encoded[segmentation_map == c] = colors[c]
-    
-    return color_encoded
 
-def create_grid_view(segmentation_map, m=16, min_coverage=0.9):
+def create_grid_view(segmentation_map, patch_size=16, min_coverage=0.9):
     # Create a new image with a white background
     height, width = segmentation_map.height, segmentation_map.width
     img = Image.new('RGB', (width, height), color='white')
-    cell_size = height // m
 
     # Draw the segmentation map on the image
     # segmentation_map_pil = Image.fromarray(color_encode(segmentation_map))
@@ -113,9 +70,9 @@ def create_grid_view(segmentation_map, m=16, min_coverage=0.9):
 
     # Draw a grid on the image
     draw = ImageDraw.Draw(img)
-    for x in range(0, width, cell_size):
+    for x in range(0, width, patch_size):
         draw.line((x, 0, x, height), fill='gray')
-    for y in range(0, height, cell_size):
+    for y in range(0, height, patch_size):
         draw.line((0, y, width, y), fill='gray')
 
     # Display the image
@@ -125,23 +82,57 @@ def create_grid_view(segmentation_map, m=16, min_coverage=0.9):
 
 if __name__ == '__main__':
 
-    path = 'segmentation_map.png'
+    parser = argparse.ArgumentParser(
+            description="Maps and converts a segmentation image dataset to grayscale images"
+        )
+    parser.add_argument(
+            "--input",
+            required=True,
+            type=str,
+            help="Image path, or a directory name"
+        )
+    parser.add_argument(
+            "--output",
+            required=False,
+            type=str,
+            help="Path for output folder",
+            default='output/'
+        )
+    # Read args
+    args = parser.parse_args()
+    # Generate image list
+    if isdir(args.input):
+        imgs = find_recursive(args.input, ext='.png')
+    # for path in imgs:
+    path = "/media/chge7185/HDD1/datasets/MDformer/seg_labels/ADEout/ADE_train_00000004.png"
+    print ('path: {}'.format(path))
     # Load the image from the path
     img = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
     print ('segmentation_map: {}'.format(img))
-   
+
     # Convert the image to a numpy array
     segmentation_map = np.array(img)
 
-    grid_map = map_segmentation_to_grid(segmentation_map, 16, 0.9)
+    # Define the colors for each class
+    colors=[]
+    with open('data_cfg/16Classes.json') as f:
+        cls_info = json.load(f)
+    for c in cls_info:
+        colors.append(cls_info[c]['color'])
+
+    grid_map = map_segmentation_to_grid(segmentation_map, 8, 0.9)
     print ('grid_map: {} {}'.format(grid_map.size, grid_map))
 
-    # Display the segmentation map and grid map side by side
-    segmentation_map_pil = Image.fromarray(color_encode(segmentation_map))
+    # original_image = Image.fromarray(img)
 
-    grid_map_pil = Image.fromarray(color_encode(grid_map.astype(np.uint8)))
+    # Display the segmentation map and grid map side by side
+    segmentation_map_pil = Image.fromarray(colorEncode(segmentation_map, colors))
+
+    grid_map_pil = Image.fromarray(colorEncode(grid_map.astype(np.uint8), colors))
     # create_grid_view(segmentation_map)
     side_by_side = Image.new('RGB', (segmentation_map_pil.width + grid_map_pil.width, segmentation_map_pil.height))
+    # side_by_side.paste(original_image, (0, 0))
     side_by_side.paste(create_grid_view(segmentation_map_pil), (0, 0))
     side_by_side.paste(create_grid_view(grid_map_pil), (segmentation_map_pil.width, 0))
     side_by_side.show()
+    input("Press Enter to continue...")

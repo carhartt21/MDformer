@@ -2,8 +2,9 @@ import torch
 from torch import nn
 import torch.nn.functional as F
 
-from einops import rearrange, repeat
+from einops import rearrange, repeat, pack
 from einops.layers.torch import Rearrange
+import logging
 
 
 def pair(t):
@@ -42,8 +43,10 @@ class Attention(nn.Module):
         super().__init__()
 
         assert dim % heads == 0
+
         # inner dimension of the model
         inner_dim = dim_head *  heads
+
         # project output if necessary
         project_out = not (heads == 1 and dim_head == dim)
 

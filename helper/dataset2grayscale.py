@@ -14,32 +14,23 @@ import argparse
 import json
 import fnmatch
 import imageio.v2 as imageio
+from helper_utils import colorEncode, find_recursive
 
-def find_recursive(root_dir, ext='.jpg', names_only=False):
-    files = []
-    for root, dirnames, filenames in os.walk(root_dir):
-        for filename in fnmatch.filter(filenames, '*' + ext):
-            if names_only:
-                files.append(filename)
-            else:
-                files.append(os.path.join(root, filename))
-    return files
 
-def visualize_result(label):
-    #TODO make universal or remove
+def visualize_result(seg_gray):
     colors=[]
-    with open('data_cfg/outside15k.json') as f:
+    with open('data_cfg/16Classes.json') as f:
         cls_info = json.load(f)
     for c in cls_info:
         colors.append(cls_info[c]['color'])
     # segmentation
-    seg = np.asarray(label).copy()
+    seg = np.asarray(seg_gray).copy()
     # seg -= 1
-    seg_color = colorEncode(seg, colors)
+    # seg_color = 
     # aggregate images and save
-    return seg_color
+    return colorEncode(np.asarray(seg_gray), colors)
 
-def remap_image_mat(img):
+def remap_image_mat(img, colorize=True):
     """Maps an image to a grayscale image according to the specified map and saves the result.
 
     Parameters
@@ -49,7 +40,6 @@ def remap_image_mat(img):
 
     """
     # Read image
-    colorize = False
     img_data = imageio.imread(img)
     if args.dataset == 'mapillary':
         # print('img_data.shape: {}'.format(img_data.shape))
@@ -69,7 +59,9 @@ def remap_image_mat(img):
     # Check if file exists already in the output path
     if os.path.isfile('{}/{}'.format(args.output, img_name)):
         return
-    for val in unique_values:
+
+    for _val in unique_values:
+        val = _val.item()
         if args.dataset == 'mapillary':
             try:
                 old_class = mapColors.index(list(val))
@@ -82,11 +74,16 @@ def remap_image_mat(img):
         elif args.dataset == 'Cityscapes':
             gray_image += ((img_data == val) * mapNames[str(int(val))]).astype(np.uint8)  
         else:
-            print('Exception: Dataset type {} unknown'.format(args.dataset))                     
-    imageio.imwrite('{}/{}'.format(args.output, img.split('/')[-1]), gray_image)
-    if colorize:
-        color_image = visualize_result(gray_image)
-        imageio.imwrite('{}/{}'.format(args.output, img.split('/')[-1].replace('.png', '_colored.png')), color_image)
+            print('Exception: Dataset type {} unknown'.format(args.dataset))        
+    _unique_values = np.unique(gray_image.reshape(-1, 1), axis=0)    
+    if not any(val in _unique_values for val in [8, 10, 11, 13]):
+        return
+    else:
+        if colorize:
+            color_image = visualize_result(gray_image)
+            imageio.imwrite('{}/{}'.format(args.output, img.split('/')[-1].replace('.png', '_colored.png')), color_image)
+        else:
+            imageio.imwrite('{}/{}'.format(args.output, img.split('/')[-1]), gray_image)
 
 
 if __name__ == '__main__':

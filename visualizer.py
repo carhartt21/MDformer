@@ -81,7 +81,7 @@ class Visualizer():
             self.plot_data = {}
             self.ncols = opt.display_ncols
             if "tensorboard_base_url" not in os.environ:
-                self.vis = visdom.Visdom(server=opt.display_server, port=opt.display_port, env=opt.display_env)
+                self.vis = visdom.Visdom(server=opt.server, port=opt.display_port, env=opt.display_env)
             else:
                 self.vis = visdom.Visdom(port=2004,
                                          base_url=os.environ['tensorboard_base_url'] + '/visdom')

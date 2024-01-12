@@ -12,6 +12,7 @@ import sys
 import torch
 from copy import deepcopy
 import json
+import random
 
 
 
@@ -24,6 +25,25 @@ def domain_to_onehot(domain, target_domains):
     onehot[idx] = 1    
     idxs, _ = get_domain_indexes(target_domains) 
     return onehot[idxs]
+
+def random_switch_domain(vector):
+    """
+    Randomly changes the 1 in a one-hot vector to a different index.
+
+    Args:
+        vector (torch.Tensor): The one-hot vector.
+
+    Returns:
+        torch.Tensor: The modified one-hot vector.
+    """
+    indices = torch.nonzero(vector).squeeze()
+    if len(indices) > 0:
+        index_to_change = random.choice(indices)
+        vector[index_to_change] = 0
+    new_index = random.randint(0, len(vector) - 1)
+    vector[new_index] = 1
+    return vector
+
 
 
 def get_domain_indexes(target_domains, domain_dict='helper/data_cfg/domain_dict.json'):
@@ -254,21 +274,30 @@ def assign_adain_params(adain_params, model):
     # assign the adain_params to the AdaIN layers in model
     for layer_id, layer in enumerate(model):
         m = layer[0].norm
+
         mean = adain_params[:, :m.num_features]
         std = adain_params[:, m.num_features:2*m.num_features]
-
+        
         m.bias = mean.contiguous().view(-1)
         m.weight = std.contiguous().view(-1)
-
         if adain_params.size(1) > 2*m.num_features:
             adain_params = adain_params[:, 2*m.num_features:]
         n = layer[1].norm
+
         mean = adain_params[:, :n.num_features]
         std = adain_params[:, n.num_features:2*n.num_features]
         n.bias = mean.contiguous().view(-1)
         n.weight = std.contiguous().view(-1)
         if adain_params.size(1) > 2*n.num_features:
             adain_params = adain_params[:, 2*n.num_features:]
+
+def get_num_adain_params(model):
+    # return the number of AdaIN parameters needed by the model
+    num_adain_params = 0
+    for m in model.module.modules():
+        if m.__class__.__name__ == "AdaptiveInstanceNorm2d":
+            num_adain_params += 2*m.num_features
+    return num_adain_params            
 
 def set_requires_grad(nets, requires_grad=False):
     """Set requies_grad=Fasle for all the networks to avoid unnecessary computations

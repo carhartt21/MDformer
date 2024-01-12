@@ -124,7 +124,6 @@ class ReferenceDataset(data.Dataset):
         for folder in ref_list:
             self.ref_samples += parse_input_folders(ref_list)
             _domain = folder.split('/')[-1]
-            logging.info('_domain: {}'.format(_domain))
             self.ref_domains += [domain_to_onehot(_domain, self.target_domains)] * len(self.ref_samples)
         assert self.ref_samples != [], 'No reference images found'         
         logging.info('{} samples found in: {}'.format(len(self.ref_samples), ref_list))                    
@@ -294,10 +293,6 @@ class InputProvider:
         sample = self._fetch_inputs()
         # ref = self._fetch_refs()        
         if self.mode == 'train':
-            # d_trg = sample.domain
-            # x_trg = torch.Tensor(0)
-            # while torch.equal(d_trg, sample.domain):
-            # d_trg = (torch.rand(1)*self.num_domains).int().to(self.device)
             lat_trg = torch.randn(sample.img.size(0), self.latent_dim)
             lat_trg2 = torch.randn(sample.img.size(0), self.latent_dim)
             inputs = Munch(img_src=sample.img, d_src=sample.domain, seg = sample.seg_mask, lat_trg=lat_trg, lat_trg2=lat_trg2, bbox=sample.bboxes)
