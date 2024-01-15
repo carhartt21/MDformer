@@ -19,12 +19,12 @@ import torch.nn.functional as F
 
 
 ##################################### Visualize ##################################### 
-def domain_to_onehot(domain, target_domains):
+def domain_to_onehot(domain, target_domain_names):
     """Convert domain name to one-hot vector."""
-    idx, n_d = get_domain_indexes([domain])
-    onehot = torch.zeros(n_d, dtype=torch.float32)
+    idx, n_dom = get_domain_indexes([domain])
+    onehot = torch.zeros(n_dom, dtype=torch.float32)
     onehot[idx] = 1    
-    idxs, _ = get_domain_indexes(target_domains) 
+    idxs, _ = get_domain_indexes(target_domain_names) 
     return onehot[idxs]
 
 def random_switch_domain(vector):
@@ -45,21 +45,20 @@ def random_switch_domain(vector):
     vector[new_index] = 1
     return vector
 
-
-
-def get_domain_indexes(target_domains, domain_dict='helper/data_cfg/domain_dict.json'):
+def get_domain_indexes(target_domain_names, domain_dict='helper/data_cfg/domain_dict.json'):
     """
     Get the domain indexes.
 
     Args:
-        target_domains (List[str]): The list of target domains.
+        target_domain_names (List[str]): The list of target domains.
         domain_dict (str): The path to the domain dictionary. Default is 'helper/data_cfg/domain_dict.json'.
     Returns:
         Dict[str, int]: A dictionary mapping each target domain to its index.
+        int: The number of domains in the dictionary.
     """
     with open(domain_dict, 'r') as f:
         domain_idxs = json.load(f)
-    domain_keys = [int(key) for key, value in domain_idxs.items() if value in target_domains]
+    domain_keys = [int(key) for key, value in domain_idxs.items() if value in target_domain_names]
     
     return domain_keys, len(domain_idxs)
 

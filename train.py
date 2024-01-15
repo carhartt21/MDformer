@@ -70,22 +70,22 @@ if __name__ == "__main__":
     initialize.set_seed(cfg.TRAIN.seed)
 
     # data loader
-    num_domains = len(cfg.DATASET.target_domains)
+    num_domains = len(cfg.DATASET.target_domain_names)
 
     data_loader = get_train_loader(
         img_size=cfg.MODEL.img_size,
         batch_size=cfg.TRAIN.batch_size_per_gpu,
         train_list=cfg.DATASET.train_list,
-        target_domains=cfg.DATASET.target_domains
+        target_domain_names=cfg.DATASET.target_domain_names
     )  # create a dataset given opt.dataset_mode and other options
 
     ref_list = []
-    for td in cfg.DATASET.target_domains:
+    for td in cfg.DATASET.target_domain_names:
         if os.path.isdir(os.path.join(cfg.DATASET.ref_path, td)):
             ref_list.append(os.path.join(cfg.DATASET.ref_path, td))
         else:
             logger.warning("{} is not a directory".format(os.path.join(cfg.DATASET.ref_path, td)))
-    assert len(ref_list) > 0, "Target domains {} not found in reference path {}".format(cfg.DATASET.target_domains,
+    assert len(ref_list) > 0, "Target domains {} not found in reference path {}".format(cfg.DATASET.target_domain_names,
                                                                                         cfg.DATASET.ref_path)
     if len(ref_list) < num_domains:
         logger.warning("Number of matching folders in the reference path {} is less than number of domains {}.".format(len(ref_list), num_domains))
@@ -94,7 +94,8 @@ if __name__ == "__main__":
         img_size=cfg.MODEL.img_size,
         batch_size=cfg.TRAIN.batch_size_per_gpu,
         ref_list=ref_list,
-        target_domains=cfg.DATASET.target_domains
+        target_domain_names=cfg.DATASET.target_domain_names,
+        max_dataset_size=cfg.DATASET.max_dataset_size
     )
 
     input_provider = InputProvider(loader=data_loader, latent_dim=cfg.MODEL.latent_dim, mode='train',
@@ -130,9 +131,9 @@ if __name__ == "__main__":
     # input_provider_val = InputProvider(data_loader.val, None, args.latent_dim, 'val')
     # inputs_val = next(input_provider_val)
 
-    logger.info('Start Training')
-    for epoch in range(cfg.TRAIN.start_epoch, cfg.TRAIN.end_epoch):
-
+    logger.info('+ Start Training')
+    logger.info('++ Training for {} epoches with {} iterations per epoch'.format(cfg.TRAIN.end_epoch-cfg.TRAIN.start_epoch, cfg.TRAIN.epoch_iters//cfg.TRAIN.batch_size_per_gpu))    
+    for epoch in range(cfg.TRAIN.start_epoch, cfg.TRAIN.end_epoch ):
         utils.model_mode(model_G, TRAIN)
         utils.model_mode(model_D, TRAIN)
         utils.model_mode(model_F, TRAIN)
@@ -141,10 +142,10 @@ if __name__ == "__main__":
 
         dataset_size = len(data_loader)
 
-        logger.info(f'Training progress(ep:{epoch + 1})')
+        logger.info('++ Training progress: Epoch {}'.format(epoch + 1))
 
         box_feature = torch.empty(1).to(device)
-        for i in range(0, cfg.TRAIN.epoch_iters, cfg.TRAIN.batch_size_per_gpu):
+        for i in range(0, cfg.TRAIN.epoch_iters//cfg.TRAIN.batch_size_per_gpu):
             inputs = next(input_provider)
             refs = next(ref_provider, inputs.d_src)
             # get a new target sample if the domain of target and source is same
@@ -212,7 +213,8 @@ if __name__ == "__main__":
             optimizer_F.step()
 
             # Visualize(visdom)
-            total_iters = epoch * len(data_loader) + (i + 1)
+            total_iters = epoch * cfg.TRAIN.epoch_iters + i
+            # logging.info('++++ Training progress: total iters: {}'.format(total_iters)),
             losses = {}
             losses.update(G_losses)
             losses.update(D_losses)
@@ -221,21 +223,22 @@ if __name__ == "__main__":
                     visualizer.plot_current_losses(epoch, float(i) / len(data_loader),
                                                {k: v.item() for k, v in losses.items()})
                 if (total_iters % cfg.TRAIN.display_iter) == 0:
-                    current_visuals = {'real_img': inputs['Source'], 'fake_img': fake_img,
-                                       'style_img': inputs['Target'], 'recon_img': recon_img}
-                    visualizer.display_current_results(current_visuals, epoch,
+                    current_visuals = {'real_img': inputs['img_src'], 'fake_img': fake_img,
+                                       'style_img': refs['img_ref'], 'recon_img': recon_img}
+                    current_domains = {'source_domain': inputs['d_src'], 'target_domain': refs['d_trg']}
+                    visualizer.display_current_results(current_visuals, current_domains, epoch,
                                                        (total_iters % cfg.TRAIN.image_save_iter == 0))
             if (total_iters % cfg.TRAIN.print_freq) == 0:
                 visualizer.print_current_losses(epoch, i, losses, time.time() - iter_date_time,
                                                 optimize_start_time - iter_date_time)
             # Save model & optimizer and example images
-            if epoch > 0 and (epoch % cfg.TRAIN.save_epoch) == 0:
-                utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_G, optimizer_G)
-                utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_D, optimizer_D)
-                utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_F, optimizer_F)
+        if epoch > 0 and (epoch % cfg.TRAIN.save_epoch) == 0:
+            utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_G, optimizer_G)
+            utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_D, optimizer_D)
+            utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_F, optimizer_F)
 
-                utils.save_color(inputs.img_src, 'test/source_image', str(epoch))
-                utils.save_color(fake_img, 'test/fake_1', str(epoch))
-                if cfg.TRAIN.w_Div > 0.0:
-                    utils.save_color(fake_img_2, 'test/fake_2', str(epoch))
-                utils.save_color(recon_img, 'test/recon', str(epoch))
+            utils.save_color(inputs.img_src, 'test/source_image', str(epoch))
+            utils.save_color(fake_img, 'test/fake_1', str(epoch))
+            if cfg.TRAIN.w_Div > 0.0:
+                utils.save_color(fake_img_2, 'test/fake_2', str(epoch))
+            utils.save_color(recon_img, 'test/recon', str(epoch))

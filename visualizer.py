@@ -6,6 +6,7 @@ import time
 import utils
 from util import html
 from subprocess import Popen, PIPE
+import logging
 
 if sys.version_info[0] == 2:
     VisdomExceptionBase = Exception
@@ -110,11 +111,12 @@ class Visualizer():
         print('Command: %s' % cmd)
         Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
 
-    def display_current_results(self, visuals, epoch, save_result):
+    def display_current_results(self, visuals, d_labels, epoch, save_result):
         """Display current results on visdom; save current results to an HTML file.
 
         Parameters:
             visuals (OrderedDict) - - dictionary of images to display or save
+            labels (OrderedDict)  - - dictionary of labels associated with each image
             epoch (int) - - the current epoch
             save_result (bool) - - if save the current results to an HTML file
         """
@@ -148,6 +150,13 @@ class Visualizer():
                     idx += 1
                 if label_html_row != '':
                     label_html += '<tr>%s</tr>' % label_html_row
+                
+                for domain in d_labels:
+                    label_html += '<tr>'
+                    for label in domain:
+                        label_html += '<td>%s</td>' % label
+                    label_html += '</tr>'
+
                 try:
                     self.vis.images(images, ncols, 2, self.display_id + 1,
                                     None, dict(title=title + ' images'))
@@ -240,10 +249,10 @@ class Visualizer():
             t_comp (float) -- computational time per data point (normalized by batch_size)
             t_data (float) -- data loading time per data point (normalized by batch_size)
         """
-        message = '(epoch: %d, iters: %d, time: %.3f, data: %.3f) ' % (epoch, iters, t_comp, t_data)
+        message = 'Epoch: %d, iters: %d, time: %.3f, data: %.3f' % (epoch, iters, t_comp, t_data)
         for k, v in losses.items():
             message += '%s: %.3f ' % (k, v)
 
-        print(message)  # print the message
+        logging.info('+++ {}'.format(message))  # print the message
         with open(self.log_name, "a") as log_file:
             log_file.write('%s\n' % message)  # save the message

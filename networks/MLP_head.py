@@ -149,7 +149,6 @@ class MLP_Head(nn.Module):
             for i in range(batch_size):
                 feat = feats[i]
                 for feat_id, feat in enumerate(feat):
-                    logging.info('feat {}: {}'.format(feat_id, feat.shape))
                     if len(feat.shape) == 3: # Conv
                         B, H, W = feat.shape[0], feat.shape[2], feat.shape[3]
                         feat_reshape = feat.permute(0, 2, 3, 1).flatten(1, 2)
