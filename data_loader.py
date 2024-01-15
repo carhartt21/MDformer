@@ -7,7 +7,7 @@ import random
 
 from munch import Munch
 import numpy as np
-from PIL import Image
+from PIL import Image, UnidentifiedImageError
 
 import torch
 from torch.utils import data
@@ -37,7 +37,10 @@ class DefaultDataset(data.Dataset):
 
     def __getitem__(self, index):
         fname = self.samples[index]
-        img = Image.open(fname).convert('RGB')
+        try:
+            img = Image.open(fname).convert('RGB')
+        except UnidentifiedImageError:
+            img = Image.new('RGB', (384, 384))
         if self.transform is not None:
             img = self.transform(img)
         return img
@@ -96,15 +99,21 @@ class MultiDomainDataset(data.Dataset):
     def __getitem__(self, index):
         img_path = self.imgs[index]
         domain = self.domains[index]
-        img = Image.open(img_path).convert('RGB')
+        try:
+            img = Image.open(img_path).convert('RGB')
+        except UnidentifiedImageError:
+            img = Image.new('RGB', (384, 384))
         sample = Munch(img=img, domain=domain)
         parent, name = str(img_path.parent), img_path.name        
-        seg_path = os.path.join(parent.replace('images', 'seg_masks'), name.replace('.jpg', '.png'))
+        seg_path = os.path.join(parent.replace('images', 'sem_labelss'), name.replace('.jpg', '.png'))
         if os.path.exists(seg_path):
-            seg_mask = Image.open(seg_path).convert('L')
+            try:
+                sem_labels = Image.open(seg_path).convert('L')
+            except UnidentifiedImageError:
+                sem_labels = Image.new('L', (352, 352))
         else:
-            seg_mask  = Image.new('L', (352, 352))
-        sample.seg_mask = seg_mask
+            sem_labels  = Image.new('L', (352, 352))
+        sample.sem_labels = sem_labels
         if self.transform is not None:
             sample = self.transform(sample)
         sample.domain = torch.tensor(sample.domain)
@@ -139,8 +148,10 @@ class ReferenceDataset(data.Dataset):
         else: 
             file_path = self.ref_samples[index]
             domain = self.ref_domains[index]
-
-        img = Image.open(file_path).convert('RGB')
+        try:
+            img = Image.open(file_path).convert('RGB')
+        except UnidentifiedImageError:
+            img = Image.new('RGB', (384, 384))
         if self.transform is not None:
             img = self.transform(img)       
         sample = Munch(img=img, domain=domain)
@@ -295,13 +306,13 @@ class InputProvider:
         if self.mode == 'train':
             lat_trg = torch.randn(sample.img.size(0), self.latent_dim)
             lat_trg2 = torch.randn(sample.img.size(0), self.latent_dim)
-            inputs = Munch(img_src=sample.img, d_src=sample.domain, seg = sample.seg_mask, lat_trg=lat_trg, lat_trg2=lat_trg2, bbox=sample.bboxes)
+            inputs = Munch(img_src=sample.img, d_src=sample.domain, seg = sample.sem_labels, lat_trg=lat_trg, lat_trg2=lat_trg2, bbox=sample.bboxes)
         elif self.mode == 'val':
             lat_trg = torch.randn(sample.img.size(0), self.latent_dim)
-            inputs = Munch(img_src=sample.img, d_src=sample.domain, seg=sample.seg_mask, lat_trg=lat_trg)
+            inputs = Munch(img_src=sample.img, d_src=sample.domain, seg=sample.sem_labels, lat_trg=lat_trg)
         elif self.mode == 'test':
             lat_trg = torch.randn(sample.size(0), self.latent_dim)
-            inputs = Munch(img_src=sample.img, d_src=sample.domain, seg=sample.seg_mask, lat_trg=lat_trg)
+            inputs = Munch(img_src=sample.img, d_src=sample.domain, seg=sample.sem_labels, lat_trg=lat_trg)
         else:
             raise NotImplementedError
         #TODO make sure not to move to GPU twice
@@ -325,7 +336,9 @@ class RefProvider:
 
 
     def __next__(self, d_src=None):
-        ref = self._fetch_refs(d_src)        
+        ref = self._fetch_refs(d_src)
+        while ref.img is None:
+            ref = self._fetch_refs(d_src)
         if self.mode == 'train':
             inputs = Munch(img_ref = ref.img, d_trg=ref.domain)
         elif self.mode == 'val':
