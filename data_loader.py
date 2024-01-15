@@ -354,7 +354,6 @@ class RefProvider:
 
     def __next__(self, d_src=None):
         ref = self._fetch_refs(d_src)
-        logging.info('ref: {}'.format(ref.domain))
         while ref.img is None:
             ref = self._fetch_refs(d_src)
         if self.mode == 'train':

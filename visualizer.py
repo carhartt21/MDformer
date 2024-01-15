@@ -151,10 +151,10 @@ class Visualizer():
                 if label_html_row != '':
                     label_html += '<tr>%s</tr>' % label_html_row
                 
-                for domain in d_labels:
+                for type, domain in d_labels.items():
                     label_html += '<tr>'
-                    for label in domain:
-                        label_html += '<td>%s</td>' % label
+                    label_html += '<td>%s</td>' % type
+                    label_html += '<td>%s</td>' % utils.onehot_to_domain(domain)
                     label_html += '</tr>'
 
                 try:
