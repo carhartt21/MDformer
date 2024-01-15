@@ -72,15 +72,17 @@ def parse_input_folders(input_file, max_sample=-1, start_idx=-1, end_idx=-1):
 
 
 class MultiDomainDataset(data.Dataset):
-    def __init__(self, train_list=None, transform=None, target_domains=[]):
+    def __init__(self, train_list=None, transform=None, target_domain_names=[], max_sample=-1):
         self.imgs, self.domains = [], []
-        self.target_domains = target_domains
-        self._make_dataset(train_list=train_list)
+        self.train_list = train_list
+        self.target_domain_names = target_domain_names
         self.transform = transform
+        self.max_sample = max_sample
+        self._make_dataset()
 
-    def _make_dataset(self, train_list=None):
-        if train_list is not None:
-            self.imgs = parse_input_folders(train_list)     
+    def _make_dataset(self):
+        if self.train_list is not None:
+            self.imgs = parse_input_folders(self.train_list, max_sample=self.max_sample)     
             for img_path in self.imgs:       
             # input from folders listed in text file
                 parent, name = str(img_path.parent), img_path.name
@@ -89,12 +91,12 @@ class MultiDomainDataset(data.Dataset):
                 if os.path.exists(domain_path): 
                     domain = np.load(domain_path)
                     assert(domain.size > 1)
-                    idxs, _ = get_domain_indexes(self.target_domains)
+                    idxs, _ = get_domain_indexes(self.target_domain_names)
                     self.domains.append(domain[idxs])
                 else: 
-                    self.domains.append(np.zeros(len(self.target_domains)) 
+                    self.domains.append(np.zeros(len(self.target_domain_names)) 
            )
-        logging.info('{} samples found in: {}'.format(len(self.imgs), train_list))                    
+        logging.info('++ {} samples found in: {}'.format(len(self.imgs), self.train_list))                    
         return
     def __getitem__(self, index):
         img_path = self.imgs[index]
@@ -123,19 +125,25 @@ class MultiDomainDataset(data.Dataset):
         return len(self.domains)
 
 class ReferenceDataset(data.Dataset):
-    def __init__(self, ref_list, transform=None, target_domains=[]):
+    def __init__(self, ref_list, transform=None, target_domain_names=[], max_sample=-1):
         self.ref_samples, self.ref_domains = [], []
+        self.ref_list = ref_list
         self.transform = transform
-        self.target_domains = target_domains
-        self._make_dataset(ref_list)
+        # target domains are the domains that we want to transfer to
+        self.target_domain_names = target_domain_names
+        self.max_sample = max_sample
+        self._make_dataset()
 
-    def _make_dataset(self, ref_list=None):
-        for folder in ref_list:
-            self.ref_samples += parse_input_folders(ref_list)
-            _domain = folder.split('/')[-1]
-            self.ref_domains += [domain_to_onehot(_domain, self.target_domains)] * len(self.ref_samples)
-        assert self.ref_samples != [], 'No reference images found'         
-        logging.info('{} samples found in: {}'.format(len(self.ref_samples), ref_list))                    
+    def _make_dataset(self):
+        for domain_folder_path in self.ref_list:
+            # convert domain to one-hot vector for all samples in the folder
+            _ref_samples = parse_input_folders([domain_folder_path], max_sample=self.max_sample)
+            domain_name = domain_folder_path.split('/')[-1]
+            self.ref_domains += [domain_to_onehot(domain_name, self.target_domain_names)] * len(_ref_samples)
+            logging.info('++ {} samples found in: {}'.format(len(_ref_samples), domain_name))
+            self.ref_samples += _ref_samples
+        assert self.ref_samples != [], '+ No reference images found'     
+        logging.info('+++ Total: {} samples found in'.format(len(self.ref_samples)))    
         return self.ref_samples, self.ref_domains
 
     def __getitem__(self, index, d_src=None):
@@ -161,7 +169,8 @@ class ReferenceDataset(data.Dataset):
         return len(self.ref_samples)
 
 
-def _make_balanced_sampler(labels):
+def _make_balanced_sampler(labels, target_domain_names=[]):
+    logging.info('+ Creating balanced sampler for reference dataset...')
     class_counts = torch.bincount(labels)
     class_weights = 1. / class_counts
     weights = class_weights[labels]
@@ -169,8 +178,8 @@ def _make_balanced_sampler(labels):
 
 
 def get_train_loader(img_size: (int, int)=(256, 256),
-                     batch_size: int=8, prob: float=0.5, num_workers: int=8, train_list: str=None, imagenet_normalize: bool=True, max_scale: float=2.0, max_n_bbox=4, target_domains=[]):
-    logging.info('Preparing DataLoader to fetch training images '
+                     batch_size: int=8, prob: float=0.5, num_workers: int=8, train_list: str=None, imagenet_normalize: bool=True, max_scale: float=2.0, max_n_bbox=4, target_domain_names=[]):
+    logging.info('+ Preparing DataLoader to fetch training images '
           'during the training phase...')
 
     if imagenet_normalize == True:
@@ -197,7 +206,7 @@ def get_train_loader(img_size: (int, int)=(256, 256),
         ct.SegMaskToBBoxes([1, 7, 14], n_bbox=max_n_bbox),
         ct.SegMaskToPatches(8, 0.8)
         ])
-    dataset = MultiDomainDataset(train_list, transform_custom, target_domains=target_domains)
+    dataset = MultiDomainDataset(train_list, transform_custom, target_domain_names=target_domain_names)
     return data.DataLoader(dataset=dataset,
                            batch_size=batch_size,
                            shuffle=True, # use shuffle or sample
@@ -208,8 +217,8 @@ def get_train_loader(img_size: (int, int)=(256, 256),
 
 def get_ref_loader(img_size: (int, int) = (256, 256),
                    batch_size: int = 8, prob: float = 0.5, num_workers: int = 8, ref_list: str = None,
-                   imagenet_normalize: bool = True, max_scale: float = 2.0, target_domains=[]):
-    logging.info('Preparing DataLoader to fetch reference images during the training phase...')
+                   imagenet_normalize: bool = True, max_scale: float = 2.0, target_domain_names=[], max_dataset_size=-1):
+    logging.info('+ Preparing DataLoader to fetch reference images during the training phase...')
 
     if imagenet_normalize:
         mean = [0.485, 0.456, 0.406]
@@ -225,10 +234,18 @@ def get_ref_loader(img_size: (int, int) = (256, 256),
         transforms.Normalize(mean=mean, std=std)
     ])
 
-    dataset = ReferenceDataset(ref_list, transform, target_domains=target_domains)
+    
+
+    dataset = ReferenceDataset(ref_list, transform, target_domain_names=target_domain_names, max_sample=max_dataset_size)
+
+    _domains = [torch.argmax(d) for d in dataset.ref_domains]
+    
+    sampler = _make_balanced_sampler(torch.Tensor(_domains).to(torch.int), target_domain_names= target_domain_names)
+
     return data.DataLoader(dataset=dataset,
                            batch_size=batch_size,
-                           shuffle=True,
+                        #    shuffle=True,
+                           sampler=sampler,                      
                            num_workers=num_workers,
                            pin_memory=True,
                            drop_last=True)
