@@ -493,8 +493,8 @@ class SemanticEmbedding(nn.Module):
         super().__init__()
         self.embedding = nn.Embedding(num_sem_classes, embed_dim)
 
-    def forward(self, x, semantic_class):
-        semantic_emb = self.embedding(semantic_class.to(torch.long))
+    def forward(self, x, sem_labels):
+        semantic_emb = self.embedding(sem_labels.to(torch.long))
         x = torch.cat([x, semantic_emb], dim=-1)
         return x
     
