@@ -22,8 +22,8 @@ from util.config import cfg
 
 from data_loader import MultiDomainDataset, InputProvider, RefProvider, get_train_loader, get_ref_loader
 
-TRAIN = 1
-EVAL = 0
+# TRAIN = 1
+# EVAL = 0
 
 parser = argparse.ArgumentParser(description='arguments yaml load')
 parser.add_argument("--conf", type=str, help="configuration file path", default="./config/base_train.yaml")
@@ -134,9 +134,9 @@ if __name__ == "__main__":
     logger.info('+ Start Training')
     logger.info('++ Training for {} epoches with {} iterations per epoch'.format(cfg.TRAIN.end_epoch-cfg.TRAIN.start_epoch, cfg.TRAIN.epoch_iters//cfg.TRAIN.batch_size_per_gpu))    
     for epoch in range(cfg.TRAIN.start_epoch, cfg.TRAIN.end_epoch ):
-        utils.model_mode(model_G, TRAIN)
-        utils.model_mode(model_D, TRAIN)
-        utils.model_mode(model_F, TRAIN)
+        utils.model_mode(model_G, 1)
+        utils.model_mode(model_D, 1)
+        utils.model_mode(model_F, 1)
         visualizer.reset()  # save intermediate results to HTML at least once every epoch
         iter_date_time = time.time()
 
@@ -158,7 +158,7 @@ if __name__ == "__main__":
             
 
             # Model Forward
-            fake_img, fake_box, features, d_pred = loss.model_forward_generation(inputs=inputs,
+            fake_img, fake_box, features, d_src_pred = loss.model_forward_generation(inputs=inputs,
                                                                                      refs = refs,
                                                                                      model=model_G,
                                                                                      n_bbox=cfg.DATASET.n_bbox,
@@ -170,7 +170,7 @@ if __name__ == "__main__":
             else:
                 fake_img_2 = torch.empty(1).to(device)
             recon_img, style_code = loss.model_forward_reconstruction(inputs=inputs, fake_img=fake_img,
-                                                                      model=model_G, d_pred=d_pred,
+                                                                      model=model_G, d_src_pred=d_src_pred,
                                                                       feat_layers=cfg.MODEL.feat_layers)
             if cfg.DATASET.n_bbox > 0 and len(features) > len(cfg.MODEL.feat_layers):
                 features, box_feature = features[:-1], features[-1]
@@ -219,13 +219,13 @@ if __name__ == "__main__":
             losses.update(G_losses)
             losses.update(D_losses)
             if (cfg.VISDOM.enabled):
-                if (total_iters % cfg.VISDOM.display_freq) == 0:
+                if (total_iters % cfg.TRAIN.display_freq) == 0:
                     visualizer.plot_current_losses(epoch, float(i) / len(data_loader),
                                                {k: v.item() for k, v in losses.items()})
                 if (total_iters % cfg.TRAIN.display_iter) == 0:
-                    current_visuals = {'real_img': inputs['img_src'], 'fake_img': fake_img,
-                                       'style_img': refs['img_ref'], 'recon_img': recon_img}
-                    current_domains = {'source_domain': inputs['d_src'], 'target_domain': refs['d_trg']}
+                    current_visuals = {'input_img': inputs.img_src, 'generated_img': fake_img,
+                                       'reference_img': refs.img_ref, 'reconstructed_img': recon_img}
+                    current_domains = {'source_domain': inputs.d_src, 'target_domain': refs.d_trg}
                     visualizer.display_current_results(current_visuals, current_domains, epoch,
                                                        (total_iters % cfg.TRAIN.image_save_iter == 0))
             if (total_iters % cfg.TRAIN.print_freq) == 0:
