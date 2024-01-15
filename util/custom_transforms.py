@@ -3,7 +3,7 @@ from einops import rearrange
 import numpy as np
 import torch
 import random
-from skimage.measure import label, regionprops
+# from skimage.measure import label, regionprops
 import torchvision.transforms as transforms
 from torchvision.transforms import InterpolationMode
 from torchvision.ops import masks_to_boxes
