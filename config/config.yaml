@@ -16,7 +16,7 @@ TRAIN:
   w_Style: 10.0 # weight for style loss
   w_NCE: 2.0 # weight for NCE loss
   w_Instance_NCE: 2.0 # weight for instance NCE loss
-  display_iter: 200 # frequency of saving the latest results
+  display_iter: 500 # frequency of saving the latest results
   save_epoch: 5 # frequency of saving checkpoints at the end of epochs
   image_save_iter: 200 # frequency of saving the latest training images
   print_freq: 100 # frequency of showing training results on console
