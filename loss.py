@@ -37,31 +37,33 @@ def model_forward_generation(inputs: Union[torch.Tensor, dict], refs, model: dic
     else:
         aggregated_feat, aggregated_box = model['Transformer'](feat_content, sem_labels=inputs.seg, bbox_info=inputs.bbox, n_bbox=n_bbox)        
 
-    y_src_pred = model['DomainClassifier'](aggregated_feat)
+    d_src_pred = model['DomainClassifier'](aggregated_feat)
     fake = model['Generator'](aggregated_feat)
     fake_box = model['Generator'](aggregated_box, inputs.bbox) if n_bbox != -1 in inputs else None
 
-    return fake, fake_box, features, y_src_pred
+    return fake, fake_box, features, d_src_pred
 
 
-def model_forward_reconstruction(inputs: Union[torch.Tensor, dict], fake_img: torch.Tensor, model: dict, d_pred: torch.Tensor, feat_layers: List[str] = []) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def model_forward_reconstruction(inputs: Union[torch.Tensor, dict], fake_img: torch.Tensor, model: dict, d_src_pred: torch.Tensor, feat_layers: List[str] = []) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Forward pass of the model for image reconstruction.
 
     Args:
         fake_img (torch.Tensor): The input fake image tensor.
         model (dict): The model dictionary containing the content encoder, style encoder, MLP Adain, transformer, and generator.
-        y_src_pred (torch.Tensor): The source domain tensor.
+        d_src_pred (torch.Tensor): The source domain tensor.
         feat_layers (List[str], optional): List of feature layers. Defaults to [].
 
     Returns:
         Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: A tuple containing the reconstructed image tensor, style code tensor, and aggregated feature tensor.
     """
     feat_content, _ = model['ContentEncoder'](fake_img, feat_layers)
-    if (torch.argmax(inputs.d_src) != 0):
-        style_code = model['StyleEncoder'](inputs.img_src, torch.argmax(inputs.d_src, dim=1))
-    else:
-        style_code = model['StyleEncoder'](inputs.img_src, torch.argmax(d_pred, dim=1))
+
+    # replace empty domain with predicted domain
+    d_recon_trg = inputs.d_src.clone()
+    max_values, _ = torch.max(d_recon_trg, dim=1)
+    d_recon_trg[max_values == 0] = d_src_pred[max_values == 0].to(d_recon_trg.dtype)
+    style_code = model['StyleEncoder'](inputs.img_src, torch.argmax(d_recon_trg, dim=1))
     utils.assign_adain_params(model['MLP_Adain'](style_code), model['Transformer'].module.module.transformer.layers)
 
     aggregated_feat, _ = model['Transformer'](feat_content, sem_embed=False, n_bbox=-1)
@@ -90,7 +92,7 @@ def compute_D_loss(inputs, refs, fake_img, model_D, criterions):
     D_losses['D_real_loss'] = compute_Discrim_loss(inputs.img_src, inputs.d_src, model_D['Discrim'], criterions['GAN'], True) 
     # use the ref image and randomly change the domain to be eihter real of fake:
     if torch.rand(1) > 0.5:
-        d_fake = utils.random_switch_domain(refs.d_trg)
+        d_fake = utils.random_change_matrix(refs.d_trg)
         D_losses['D_fake_loss_2'] = compute_Discrim_loss(refs.img_ref, d_fake, model_D['Discrim'], criterions['GAN'], False)
     else:
         D_losses['D_fake_loss_2'] = compute_Discrim_loss(refs.img_ref, refs.d_trg, model_D['Discrim'], criterions['GAN'], True)
@@ -172,6 +174,8 @@ def compute_G_loss(inputs: Dict,
 
 ######################################### Each Loss #########################################
 
+
+
 def compute_Discrim_loss(img, domain, model, criterion, Target=True):
     """
     Calculate the discriminator loss.
@@ -185,7 +189,8 @@ def compute_Discrim_loss(img, domain, model, criterion, Target=True):
     Returns:
         torch.Tensor: Discriminator loss.
     """
-    pred = model(img.detach(), domain)
+    _domain = utils.matrix_to_one_hot(domain)
+    pred = model(img.detach(), _domain)
     return criterion(pred, Target).mean()
 
 
