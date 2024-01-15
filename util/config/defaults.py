@@ -150,9 +150,11 @@ _C.TRAIN.save_epoch = 5
 # frequency to display training info
 _C.TRAIN.display_iter = 500
 # frequency to save training images
-_C.TRAIN.image_save_iter = 200
+_C.TRAIN.image_save_iter = 1000
 # frequency to print training info on console
 _C.TRAIN.print_freq = 100
+# frequency to display loss visualizations
+_C.TRAIN.display_freq = 200
 # manual seed
 _C.TRAIN.seed = 304
 # use cuda
@@ -198,8 +200,6 @@ _C.VISDOM = CN()
 _C.VISDOM.enabled = True
 # display size in visdom
 _C.VISDOM.display_winsize = 256
-# frequency to display visualizations
-_C.VISDOM.display_freq = 400
 # number of columns to display in visdom
 _C.VISDOM.display_ncols = 4
 # window id of the web display
