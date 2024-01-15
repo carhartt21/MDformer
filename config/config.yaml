@@ -1,7 +1,7 @@
 TRAIN: 
   log_path: './weights' # path of weights
   use_cuda: True
-  seed: 42
+  seed: 21
   start_epoch: 0 # if resume, set this as a number
   end_epoch: 200 # number of epochs of training
   #contnue here
@@ -16,12 +16,13 @@ TRAIN:
   w_Style: 10.0 # weight for style loss
   w_NCE: 2.0 # weight for NCE loss
   w_Instance_NCE: 2.0 # weight for instance NCE loss
-  display_iter: 500 # frequency of saving the latest results
+  display_iter: 1 # frequency of displaying the latest results
   save_epoch: 5 # frequency of saving checkpoints at the end of epochs
   image_save_iter: 200 # frequency of saving the latest training images
   print_freq: 100 # frequency of showing training results on console
   distributed: False # if true use multiprocess distributed training
   gpu_ids: [0] # gpu ids: e.g. 0, 1, 2. use -1 for CPU
+  epoch_iters: 8000 # number of iterations per epoch
 
 MODEL:
   name: 'MDformer' # name of the experiment. It decides where to store samples and models
@@ -68,17 +69,16 @@ MODEL:
 
 
 DATASET:
-  target_domains: ['summer', 'winter', 'spring', 'autumn'] # domains to be used for training
+  target_domain_names: ['summer', 'winter', 'spring', 'autumn'] # domains to be used for training
   ref_path: '/media/chge7185/HDD1/datasets/MDformer/ref_images' # path of reference images
   train_list: 'config/train_list.txt' # path of input images
   n_bbox: 4 # # box
-  max_dataset_size: 100000 # Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.
+  max_dataset_size: -1 # Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded. -1 = no maximum number of samples
   
 
 VISDOM:
   enabled: True # visualize the training process using visdom
   display_winsize: 256 # visdom display size
-  display_freq: 400 # frequency of showing training results on screen
   display_ncols:  4 # if positive, display all images in a single visdom web panel with certain number of images per row.
   display_id: -1 # window id of the web display.
   server: "http://localhost" # visdom server of the web display
