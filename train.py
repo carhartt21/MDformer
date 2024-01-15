@@ -126,7 +126,7 @@ if __name__ == "__main__":
 
     criterions = initialize.set_criterions(cfg, device)
 
-    visualizer = Visualizer(cfg.MODEL.name, cfg.TRAIN.log_path, cfg.VISDOM)
+    visualizer = Visualizer(cfg.MODEL.name, cfg.TRAIN.log_path, cfg.VISDOM, cfg.DATASET.target_domain_names)
 
     # input_provider_val = InputProvider(data_loader.val, None, args.latent_dim, 'val')
     # inputs_val = next(input_provider_val)

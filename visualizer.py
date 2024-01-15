@@ -54,7 +54,7 @@ class Visualizer():
     It uses 'visdom' for display, and 'dominate' (wrapped in 'HTML') for creating HTML files with images.
     """
 
-    def __init__(self, name, log_path, opt):
+    def __init__(self, name, log_path, opt, target_domain_names=[]):
         """Initialize the Visualizer class
 
         Parameters:
@@ -76,6 +76,7 @@ class Visualizer():
         self.port = opt.port
         self.saved = False
         self.enabled = opt.enabled
+        self.target_domain_names = target_domain_names
 
         if self.enabled and self.display_id > 0:  # connect to a visdom server given <display_port> and <display_server>
             import visdom
@@ -136,6 +137,7 @@ class Visualizer():
                 images = []
                 idx = 0
                 for label, image in visuals.items():
+
                     image_numpy = utils.tensor2im(image)
                     label_html_row += '<td>%s</td>' % label
                     images.append(image_numpy.transpose([2, 0, 1]))
@@ -154,7 +156,7 @@ class Visualizer():
                 for type, domain in d_labels.items():
                     label_html += '<tr>'
                     label_html += '<td>%s</td>' % type
-                    label_html += '<td>%s</td>' % utils.onehot_to_domain(domain)
+                    label_html += '<td>%s</td>' % utils.onehot_to_domain(domain[0], self.target_domain_names)
                     label_html += '</tr>'
 
                 try:

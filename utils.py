@@ -34,7 +34,7 @@ def matrix_to_one_hot(matrix):
     one_hot[max_values == 0] = 0
     return one_hot
 
-def onehot_to_domain(onehot, domain_dict='helper/data_cfg/domain_dict.json'):
+def onehot_to_domain(onehot, target_domain_names=[], domain_dict='helper/data_cfg/domain_dict.json'):
     """
     Convert one-hot vector to domain name.
 
@@ -46,7 +46,11 @@ def onehot_to_domain(onehot, domain_dict='helper/data_cfg/domain_dict.json'):
     """
     with open(domain_dict, 'r') as f:
         domain_idxs = json.load(f)
-    domain_keys = [int(key) for key, value in domain_idxs.items() if value == onehot.argmax().item()]
+    idxs, n_dom = get_domain_indexes(target_domain_names)
+    assert len(idxs) == onehot.shape[0], "The number of domains in the one-hot vector does not match the number of target domains."
+    onehot_all = torch.zeros(n_dom, dtype=onehot.dtype, device=onehot.device)
+    onehot_all[idxs] = onehot
+    domain_keys = [value for key, value in domain_idxs.items() if int(key) == onehot_all.argmax().item()]
     if len(domain_keys) == 0:
         return "None"
     else:
@@ -91,7 +95,6 @@ def random_change_matrix(matrix):
     modified_matrix = torch.zeros_like(matrix)
     for i in range(matrix.shape[0]):
         modified_matrix[i] = random_change_domain(matrix[i])
-    logging.info("Randomly changed matrix from {} to {}".format(matrix, modified_matrix))
     return modified_matrix
 
 
