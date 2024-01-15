@@ -53,7 +53,7 @@ _C.MODEL.in_channels = 3
 _C.MODEL.fc_dim = 2048
 # feature layers for NCE loss
 _C.MODEL.feat_layers = [0, 4, 8]
-# number of patches
+# number of patches for
 _C.MODEL.num_patches = 256
 # patch size
 _C.MODEL.patch_size = 8
@@ -148,7 +148,7 @@ _C.TRAIN.w_Cycle = 2.0
 # frequency to save checkpoints 
 _C.TRAIN.save_epoch = 5
 # frequency to display training info
-_C.TRAIN.display_iter = 20
+_C.TRAIN.display_iter = 500
 # frequency to save training images
 _C.TRAIN.image_save_iter = 200
 # frequency to print training info on console

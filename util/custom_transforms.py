@@ -38,7 +38,7 @@ class RandomCrop:
         """
         i, j, h, w = transforms.RandomCrop.get_params(sample.img, output_size=self.size)
         sample.img = transforms.functional.crop(sample.img, i, j, h, w)
-        sample['seg_mask'] = transforms.functional.crop(sample['seg_mask'], i, j, h, w)
+        sample['sem_labels'] = transforms.functional.crop(sample['sem_labels'], i, j, h, w)
         return sample
 
 
@@ -73,7 +73,7 @@ class RandomScale:
         scale = random.uniform(min_scale, max_scale)
         sample.img.save('before_resize.jpg')
         sample.img = transforms.functional.resize(image, int(w * scale))
-        sample.seg_mask  = transforms.functional.resize(sample.seg_mask , int(w * scale), interpolation=InterpolationMode.NEAREST)
+        sample.sem_labels  = transforms.functional.resize(sample.sem_labels , int(w * scale), interpolation=InterpolationMode.NEAREST)
         sample.img.save('after_resize.jpg')
         return sample
     
@@ -100,10 +100,10 @@ class HorizontalFlip:
             The transformed sample.
         """
         image = sample.img
-        seg_mask = sample['seg_mask']
+        sem_labels = sample['sem_labels']
         if random.random() < self.p:
             sample.img = transforms.functional.hflip(image)
-            sample.seg_mask = transforms.functional.hflip(seg_mask)
+            sample.sem_labels = transforms.functional.hflip(sem_labels)
         return sample
 
 class Normalize:
@@ -148,7 +148,7 @@ class ToTensor:
             The transformed sample.
         """
         sample.img = transforms.functional.to_tensor(sample.img)
-        sample.seg_mask = transforms.functional.to_tensor(sample.seg_mask).to(torch.int32)
+        sample.sem_labels = transforms.functional.to_tensor(sample.sem_labels).to(torch.int32)
         # sample.bboxes = torch.tensor(sample.bboxes)
         return sample
 
@@ -178,13 +178,13 @@ class SegMaskToPatches:
         Returns:
             The transformed sample.
         """
-        height, width = sample.seg_mask.shape[-2]//4, sample.seg_mask.shape[-1]//4
+        height, width = sample.sem_labels.shape[-2]//4, sample.sem_labels.shape[-1]//4
         assert height == width, "Segmentation map height {} and width {} are not equal".format(height, width)
         assert height % self.patch_size == 0, "Segmenation map {}x{} is not divisible by patch size {}".format(height, width, self.patch_size)
 
         n_patches = (height // self.patch_size)
         # Get list of unique classes in the segmentation map excluding 0
-        _classes = torch.unique(sample.seg_mask[sample.seg_mask != 0], sorted=True)
+        _classes = torch.unique(sample.sem_labels[sample.sem_labels != 0], sorted=True)
         # Calculate the minimum number of pixels that should be covered by the segmentation map in each patch
         min_pixels = self.patch_size ** 2 * self.min_coverage
         # Create a grid to hold the classes assigned to each patch
@@ -200,13 +200,13 @@ class SegMaskToPatches:
                 # Iterate over each class in the segmentation map
                 for c in _classes:
                     # Count the number of pixels covered by the current class in the current cell
-                    pixels_covered = torch.sum(sample.seg_mask[:, top:bottom, left:right] == c)
+                    pixels_covered = torch.sum(sample.sem_labels[:, top:bottom, left:right] == c)
                     
                     # If the number of pixels covered is greater than or equal to the minimum required, assign the class to the current cell
                     if pixels_covered >= min_pixels:
                         grid[i, j] = c
 
-        sample.seg_mask= grid.view(-1).to(torch.int32)
+        sample.sem_labels= grid.view(-1).to(torch.int32)
         return sample
 
 
@@ -235,11 +235,11 @@ class SegMaskToBBoxes:
             The transformed sample.
         """
         fg_classes = torch.tensor(self.fg_classes)
-        _classes = torch.unique(sample.seg_mask[sample.seg_mask != 0], sorted=True)
+        _classes = torch.unique(sample.sem_labels[sample.sem_labels != 0], sorted=True)
         i = 0        
         for c in fg_classes:
             if c in _classes:
-                mask  = sample.seg_mask == c
+                mask  = sample.sem_labels == c
                 save_image(mask.float(), 'output/mask_{}.png'.format(c))
                 if mask.sum() < self.min_pixel:
                     continue
