@@ -7,7 +7,7 @@ import random
 import torchvision.transforms as transforms
 from torchvision.transforms import InterpolationMode
 from torchvision.ops import masks_to_boxes
-from torchvision.utils import draw_bounding_boxes, save_image
+from torchvision.utils import draw_bounding_boxes
 import torch.nn.functional as F
 from utils import mask_to_bboxes
 import logging
@@ -71,10 +71,8 @@ class RandomScale:
         min_scale = max(self.output_size[0]/w, self.output_size[1]/h)
         max_scale = min_scale * 1.25
         scale = random.uniform(min_scale, max_scale)
-        sample.img.save('before_resize.jpg')
         sample.img = transforms.functional.resize(image, int(w * scale))
         sample.sem_labels  = transforms.functional.resize(sample.sem_labels , int(w * scale), interpolation=InterpolationMode.NEAREST)
-        sample.img.save('after_resize.jpg')
         return sample
     
 class HorizontalFlip:
@@ -240,7 +238,6 @@ class SegMaskToBBoxes:
         for c in fg_classes:
             if c in _classes:
                 mask  = sample.sem_labels == c
-                save_image(mask.float(), 'output/mask_{}.png'.format(c))
                 if mask.sum() < self.min_pixel:
                     continue
 
