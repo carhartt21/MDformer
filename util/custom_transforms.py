@@ -6,7 +6,6 @@ import random
 # from skimage.measure import label, regionprops
 import torchvision.transforms as transforms
 from torchvision.transforms import InterpolationMode
-from torchvision.ops import masks_to_boxes
 from torchvision.utils import draw_bounding_boxes
 import torch.nn.functional as F
 from utils import mask_to_bboxes
