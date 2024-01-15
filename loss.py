@@ -146,19 +146,18 @@ def compute_G_loss(inputs: Dict,
     
     if cfg.TRAIN.w_NCE > 0.0 or (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0):
         fake_feat_content, fake_features = model_G['ContentEncoder'](fake_img, cfg.MODEL.feat_layers)
-
-        # if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0:
-        #     fake_box_feature = model_G['Transformer'].module.module.extract_box_feature(fake_feat_content, inputs.bbox, cfg.DATASET.n_bbox)
+        if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0:
+            fake_box_feature = model_G['Transformer'].module.module.extract_box_feature(fake_feat_content, inputs.bbox, cfg.DATASET.n_bbox)
 
     if cfg.TRAIN.w_NCE > 0.0:
         G_losses['NCE_loss'] = cfg.TRAIN.w_NCE * compute_NCE_loss(fake_features, features, model_F['MLP_head'], criterions['NCE'], cfg.MODEL.num_patches)
     if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0:
-        valid_box=torch.where(inputs.bbox[:,:,0] != -1, True,False).view(-1)
+        valid_box=torch.where(inputs.bbox[:,:,0] > 0, True,False).view(-1)
         if valid_box[valid_box ==  True].shape[0] == 0.0:
-            G_losses['instNCE_loss'] = torch.tensor(0.0).to(input.img_src.device)
-        # else:
-        #     criterions['InstNCE'].batch_size = valid_box[valid_box ==  True].shape[0]
-        #     G_losses['instNCE_loss'] = cfg.TRAIN.w_Instance_NCE * compute_NCE_loss([fake_box_feature[valid_box,:,:,:]], [box_feature[valid_box,:,:,:]], model_F['MLP_head_inst'], criterions['InstNCE'], 64)
+            G_losses['instNCE_loss'] = torch.tensor(0.0).to(inputs.img_src.device)
+        else:
+            criterions['InstNCE'].batch_size = valid_box[valid_box ==  True].shape[0]
+            G_losses['instNCE_loss'] = cfg.TRAIN.w_Instance_NCE * compute_NCE_loss([fake_box_feature[valid_box,:,:,:]], [box_feature[valid_box,:,:,:]], model_F['MLP_head_inst'], criterions['InstNCE'], 64)
     if cfg.TRAIN.w_Div > 0.0:
         G_losses['style_div_loss'] = cfg.TRAIN.w_Div * compute_diversity_loss(fake_img, fake_imgs[1], criterions['Style_Div'])
     
@@ -235,8 +234,8 @@ def compute_NCE_loss(feat_q, feat_k, model, criterionNCE, num_patches):
     Returns:
         torch.Tensor: NCE loss.
     """
-    feat_k_pool, sample_ids = model(feat_k, num_patches, None)
-    feat_q_pool, _ = model(feat_q, num_patches, sample_ids)
+    feat_k_pool, sample_ids = model(feats=feat_k, num_patches=num_patches, patch_ids=None)
+    feat_q_pool, _ = model(feats=feat_q, num_patches=num_patches, patch_ids=sample_ids)
 
     total_nce_loss = 0.0    
     for f_q, f_k in zip(feat_q_pool, feat_k_pool):
