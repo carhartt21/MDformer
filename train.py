@@ -217,7 +217,8 @@ if __name__ == "__main__":
             losses.update(G_losses)
             losses.update(D_losses)
             if (cfg.VISDOM.enabled):
-                visualizer.plot_current_losses(epoch, float(i) / len(data_loader),
+                if (total_iters % cfg.VISDOM.display_freq) == 0:
+                    visualizer.plot_current_losses(epoch, float(i) / len(data_loader),
                                                {k: v.item() for k, v in losses.items()})
                 if (total_iters % cfg.TRAIN.display_iter) == 0:
                     current_visuals = {'real_img': inputs['Source'], 'fake_img': fake_img,
@@ -236,6 +237,5 @@ if __name__ == "__main__":
                 utils.save_color(inputs.img_src, 'test/source_image', str(epoch))
                 utils.save_color(fake_img, 'test/fake_1', str(epoch))
                 if cfg.TRAIN.w_Div > 0.0:
-
                     utils.save_color(fake_img_2, 'test/fake_2', str(epoch))
                 utils.save_color(recon_img, 'test/recon', str(epoch))
