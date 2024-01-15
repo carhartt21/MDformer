@@ -37,7 +37,7 @@ def set_seed(seed=42):
     torch.cuda.manual_seed_all(seed) # if use multi-GPU
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    logging.info("Seed set to: {}".format(seed))
+    logging.info("+ Seed set to: {}".format(seed))
     return
 
 def build_model(model_cfg, device, distributed=False, num_domains=8):
@@ -53,13 +53,12 @@ def build_model(model_cfg, device, distributed=False, num_domains=8):
     Returns:
         tuple: A tuple containing the model_G, parameter_G, model_D, parameter_D, and model_F.
     """
-    logging.info("Building the Model")
-    logging.info("Distributed : {}".format(distributed))
+    logging.info("+ Building the Model")
+    logging.info("++ Distributed Training: {}".format(distributed))
     if distributed:
-        logging.info("Distributed Training")
         torch.cuda.set_device(device)
         dist.init_process_group(backend='nccl', init_method='env://')
-        logging.info(f"device : {device}")
+        logging.info("++ Device : {}".format(device))
         # logging.info(f"model_cfg.gpu_ids : {model_cfg.gpu_ids}")
 
     model_G = {}
@@ -68,17 +67,17 @@ def build_model(model_cfg, device, distributed=False, num_domains=8):
     parameter_D = []
     model_F = {}
 
-    # domain_idxs = utils.get_domain_indexes(model_cfg.DATASET.target_domains)
+    # domain_idxs = utils.get_domain_indexes(model_cfg.DATASET.target_domain_names)
     # logging.info("domain_idxs : {}".format(domain_idxs))
 
-
+    logging.info("++ Building the ContentEncoder")
     model_G['ContentEncoder'] = DataParallel(networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling))
-
+    logging.info("++ Building the StyleEncoder")
     model_G['StyleEncoder'] = DataParallel(networks.StyleEncoder(input_channels=model_cfg.in_channels, 
                                                         n_generator_filters=model_cfg.n_generator_filters, 
                                                         style_dim=model_cfg.style_dim, 
                                                         num_domains=num_domains))
-
+    logging.info("++ Building the Transformer")
     model_G['Transformer'] = DataParallel(networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
                                                                  patch_size=model_cfg.patch_size, 
                                                                  patch_embed_C=model_cfg.TRANSFORMER.embed_C, 
@@ -87,26 +86,26 @@ def build_model(model_cfg, device, distributed=False, num_domains=8):
                                                                  depth=model_cfg.TRANSFORMER.depth, 
                                                                  heads=model_cfg.TRANSFORMER.heads, 
                                                                  mlp_dim=model_cfg.TRANSFORMER.mlp_dim))
-
+    logging.info("++ Building the DomainClassifier")
     model_G['DomainClassifier'] = DataParallel(networks.TransformerClassifier(input_dim=model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim, num_classes=num_domains))
-
+    logging.info("++ Building the Generator")
     model_G['Generator'] = DataParallel(networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
                                                   patch_size=model_cfg.patch_size, 
                                                   embed_C=model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim, 
                                                   feat_C=model_cfg.TRANSFORMER.feat_C, 
                                                   n_generator_filters=model_cfg.n_generator_filters,
                                                   n_downsampling=model_cfg.n_downsampling))
-
+    logging.info("++ Building the MLP Block") 
     model_G['MLP_Adain'] = DataParallel(networks.MLP(input_dim=model_cfg.style_dim, output_dim=2176))
 
-
+    logging.info("++ Building the Mapping Network")
     model_G['MappingNetwork'] = DataParallel(networks.MappingNetwork(num_domains=num_domains, 
                                                             latent_dim=model_cfg.latent_dim,
                                                             style_dim=model_cfg.style_dim))
 
-
+    logging.info("++ Building the Discriminator")
     model_D['Discrim'] = DataParallel(networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3, num_domains=num_domains))
-
+    logging.info("++ Building the MLP Heads for Loss Calculation")
     model_F['MLP_head'] = DataParallel(networks.MLP_Head())
     model_F['MLP_head_inst'] = DataParallel(networks.MLP_Head())
 
@@ -147,11 +146,11 @@ def build_model(model_cfg, device, distributed=False, num_domains=8):
     # model_F['MLP_head_inst'] = DDP(networks.MLP_Head())
 
     if model_cfg.load_weight:
-        logging.info("Loading Network weights")
+        logging.info("+ Loading Network weights")
         for key in model_G.keys():
             file = os.path.join(model_cfg.weight_path, f'{key}.pth')
             if os.path.isfile(file):
-                logging.info(f"Success load {key} weight")
+                logging.info("++ Success load weight {}".format(key))
                 model_load_dict = torch.load(file, map_location=device)
                 keys = model_load_dict.keys()
                 values = model_load_dict.values()
@@ -163,12 +162,12 @@ def build_model(model_cfg, device, distributed=False, num_domains=8):
                 new_dict = OrderedDict(list(zip(new_keys,values)))
                 model_G[key].load_state_dict(new_dict)
             else:
-                logging.info(f"Dose not exist {file}")
+                logging.info("++ Does not exist {}".format(file))
 
         for key in model_D.keys():
             file = os.path.join(model_cfg.weight_path, f'{key}.pth')
             if os.path.isfile(file):
-                logging.info(f"Success load {key} weight")
+                logging.info("++ Success load {} weight".format(key))
                 model_load_dict = torch.load(file, map_location=device)
                 keys = model_load_dict.keys()
                 values = model_load_dict.values()
@@ -180,7 +179,7 @@ def build_model(model_cfg, device, distributed=False, num_domains=8):
                 new_dict = OrderedDict(list(zip(new_keys,values)))
                 model_D[key].load_state_dict(new_dict)
             else:
-                logging.info(f"Dose not exist {file}")
+                logging.info("++ Does not exist {}".format(file))
             
     for key, val in model_G.items():
         model_G[key] = nn.DataParallel(val)
