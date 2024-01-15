@@ -19,6 +19,39 @@ import torch.nn.functional as F
 
 
 ##################################### Visualize ##################################### 
+def matrix_to_one_hot(matrix):
+    """
+    Translate every row of a matrix to a one-hot vector.
+
+    Args:
+        matrix (torch.Tensor): Input matrix.
+
+    Returns:
+        torch.Tensor: Matrix with one-hot vectors.
+    """
+    max_values, _ = torch.max(matrix, dim=1)
+    one_hot = torch.eye(matrix.shape[1]).to(matrix.device)[torch.argmax(matrix, dim=1)]
+    one_hot[max_values == 0] = 0
+    return one_hot
+
+def onehot_to_domain(onehot, domain_dict='helper/data_cfg/domain_dict.json'):
+    """
+    Convert one-hot vector to domain name.
+
+    Args:
+        onehot (torch.Tensor): The one-hot vector.
+        domain_dict (str): The path to the domain dictionary. Default is 'helper/data_cfg/domain_dict.json'.
+    Returns:
+        str: The domain name.
+    """
+    with open(domain_dict, 'r') as f:
+        domain_idxs = json.load(f)
+    domain_keys = [int(key) for key, value in domain_idxs.items() if value == onehot.argmax().item()]
+    if len(domain_keys) == 0:
+        return "None"
+    else:
+       return domain_keys[0]
+
 def domain_to_onehot(domain, target_domain_names):
     """Convert domain name to one-hot vector."""
     idx, n_dom = get_domain_indexes([domain])
@@ -27,7 +60,7 @@ def domain_to_onehot(domain, target_domain_names):
     idxs, _ = get_domain_indexes(target_domain_names) 
     return onehot[idxs]
 
-def random_switch_domain(vector):
+def random_change_domain(vector):
     """
     Randomly changes the 1 in a one-hot vector to a different index.
 
@@ -37,13 +70,30 @@ def random_switch_domain(vector):
     Returns:
         torch.Tensor: The modified one-hot vector.
     """
-    indices = torch.nonzero(vector).squeeze()
-    if len(indices) > 0:
-        index_to_change = random.choice(indices)
-        vector[index_to_change] = 0
-    new_index = random.randint(0, len(vector) - 1)
-    vector[new_index] = 1
-    return vector
+    out_v = vector.clone()
+    index_one = torch.nonzero(out_v)
+    index_zero = torch.nonzero(out_v == 0)
+    index_new_one = index_zero[torch.randperm(len(index_zero))[0]]
+    out_v[index_one] = 0
+    out_v[index_new_one] = 1
+    return out_v
+
+def random_change_matrix(matrix):
+    """
+    Randomly changes the 1 in each row of a matrix of one-hot vectors to a different index.
+
+    Args:
+        matrix (torch.Tensor): The matrix of one-hot vectors.
+
+    Returns:
+        torch.Tensor: The modified matrix.
+    """
+    modified_matrix = torch.zeros_like(matrix)
+    for i in range(matrix.shape[0]):
+        modified_matrix[i] = random_change_domain(matrix[i])
+    logging.info("Randomly changed matrix from {} to {}".format(matrix, modified_matrix))
+    return modified_matrix
+
 
 def get_domain_indexes(target_domain_names, domain_dict='helper/data_cfg/domain_dict.json'):
     """
