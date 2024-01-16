@@ -150,7 +150,7 @@ class ReferenceDataset(data.Dataset):
         # make sure that the reference image is not from the same domain as the source image
         if d_src is not None:
             while torch.equal(torch.argmax(d_src), torch.argmax(self.ref_domains[index])):
-                index = random.randint(0, len(self.samples) - 1)
+                index = random.randint(1, len(self.ref_samples) - 100)
                 file_path = self.ref_samples[index]
                 domain = self.ref_domains[index]
         else: 
@@ -301,7 +301,7 @@ class InputProvider:
         self.loader = loader
         self.iter = iter(self.loader)
         self.latent_dim = latent_dim
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.mode = mode
         self.num_domains = num_domains
 
@@ -340,7 +340,7 @@ class RefProvider:
     def __init__(self, loader_ref, mode=''):
         self.loader_ref = loader_ref
         # self.iter_ref = iter(self.loader_ref)
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.mode = mode
 
     def _fetch_refs(self, d_src=None):
@@ -354,7 +354,7 @@ class RefProvider:
 
     def __next__(self, d_src=None):
         ref = self._fetch_refs(d_src)
-        while ref.img is None:
+        while ref is None:
             ref = self._fetch_refs(d_src)
         if self.mode == 'train':
             inputs = Munch(img_ref = ref.img, d_trg=ref.domain)
