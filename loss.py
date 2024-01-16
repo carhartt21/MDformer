@@ -40,7 +40,7 @@ def model_forward_generation(inputs: Union[torch.Tensor, dict], refs, model: dic
     d_src_pred = model['DomainClassifier'](aggregated_feat)
     fake = model['Generator'](aggregated_feat)
     fake_box = model['Generator'](aggregated_box, inputs.bbox) if n_bbox != -1 in inputs else None
-
+    # logging.info('model forward generation d_src_pred: {}'.format(d_src_pred))
     return fake, fake_box, features, d_src_pred
 
 
@@ -113,7 +113,8 @@ def compute_G_loss(inputs: Dict,
                    model_F: Dict, 
                    criterions: Dict, 
                    cfg: object, 
-                   fake_img_2: Optional[torch.Tensor] = None) -> Tuple[float, Dict]:
+                   fake_img_2: Optional[torch.Tensor] = None,
+                   d_src_pred: Optional[torch.Tensor] = None) -> Tuple[float, Dict]:
     """
     Calculate loss for the generator.
 
@@ -137,7 +138,6 @@ def compute_G_loss(inputs: Dict,
     total_G_loss = 0
 
     fake_img = fake_imgs[0]
-
     if cfg.TRAIN.w_GAN > 0.0:
         G_losses['GAN_loss'] = cfg.TRAIN.w_GAN * compute_GAN_loss(fake_img, refs.d_trg, model_D['Discrim'], criterions['GAN'])
     if cfg.TRAIN.w_Recon > 0.0:
@@ -166,6 +166,12 @@ def compute_G_loss(inputs: Dict,
     if cfg.TRAIN.w_Cycle > 0.0:
         G_losses['cycle_loss'] = cfg.TRAIN.w_Cycle * compute_cycle_loss(inputs.img_src, recon_img, criterions['Cycle'])
 
+    if cfg.TRAIN.w_DClass > 0.0:
+        if d_src_pred is not None and torch.max(inputs.d_src) > 0.0:
+            G_losses['class_loss'] = cfg.TRAIN.w_DClass * compute_domain_classification_loss(inputs.d_src, d_src_pred, criterions['DClass'])
+        else: 
+            G_losses['class_loss'] = torch.tensor(0.0).to(inputs.img_src.device)
+            
     for loss in G_losses.values():
         total_G_loss += loss
 
@@ -277,3 +283,23 @@ def compute_cycle_loss(img, rec_img, criterion):
         torch.Tensor: Cycle consistency loss.
     """
     return criterion(img, rec_img)
+
+def compute_domain_classification_loss(d_src, d_src_pred, criterion):
+    """
+    Calculate the domain classification loss.
+
+    Args:
+        d_src (torch.Tensor): Source domain.
+        d_src_pred (torch.Tensor): Predicted source domain.
+        criterion (torch.nn.Module): Criterion for calculating the loss.
+
+    Returns:
+        torch.Tensor: Domain classification loss.
+    """
+    max, trg_idx = d_src.max(dim=1)
+    # replace empty source domain with ignore index
+    trg_idx[max==0] = -1
+    test = criterion(d_src_pred, trg_idx)
+    # logging.info(f"trg_idx: {trg_idx} d_src_pred: {d_src_pred}")
+    # logging.info(f"Domain Classification Loss: {test} {test.shape} {test.dtype}")
+    return test
