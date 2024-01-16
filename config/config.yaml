@@ -22,7 +22,7 @@ TRAIN:
   display_losses_iter: 1 # frequency of displaying losses in visdom
   save_epoch: 5 # frequency of saving checkpoints at the end of epochs
   image_save_iter: 200 # frequency of saving the latest training images
-  print_freq: 100 # frequency of showing training results on console
+  print_losses_iter: 1 # frequency of showing training results on console
   distributed: False # if true use multiprocess distributed training
   gpu_ids: [0] # gpu ids: e.g. 0, 1, 2. use -1 for CPU
   epoch_iters: 8000 # number of iterations per epoch
@@ -46,6 +46,7 @@ MODEL:
   latent_dim : 16
   # dimension of the semantic embedding
   sem_embed_dim : 64
+  # Mapping Network hidden dimension
   # number of content channels
   content_dim : 256
   # number of downsampling layers in the content encoder

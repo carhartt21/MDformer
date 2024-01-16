@@ -63,6 +63,11 @@ if __name__ == "__main__":
 
     logger.info('Loaded configuration file {}'.format(args.cfg))
 
+    if not os.path.isdir(cfg.TRAIN.log_path):
+        os.makedirs(cfg.TRAIN.log_path)
+    with open(os.path.join(cfg.TRAIN.log_path, 'config_{}.yaml'.format(cfg.MODEL.name)), 'w') as f:
+        f.write("{}".format(cfg))
+
     # train_cfg = DotMap(conf['Train'])
     device = torch.device('cuda:{}'.format(cfg.TRAIN.gpu_ids[0])) if cfg.TRAIN.gpu_ids else torch.device('cpu')
 
@@ -97,6 +102,8 @@ if __name__ == "__main__":
         target_domain_names=cfg.DATASET.target_domain_names,
         max_dataset_size=cfg.DATASET.max_dataset_size
     )
+
+
 
     input_provider = InputProvider(loader=data_loader, latent_dim=cfg.MODEL.latent_dim, mode='train',
                                    num_domains=cfg.DATASET.num_domains)
