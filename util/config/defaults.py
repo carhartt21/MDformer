@@ -123,10 +123,12 @@ _C.TRAIN.optim_beta = (0.5, 0.999)
 # learning rate
 _C.TRAIN.lr = 0.02
 # indiviudal learning rate for encoder, generator and discriminator
-_C.TRAIN.lr_encoder = 0.02
-_C.TRAIN.lr_generator = 0.02
-_C.TRAIN.lr_discriminator = 0.02
+_C.TRAIN.lr_encoder = 2e-4
+_C.TRAIN.lr_generator = 2e-4
+_C.TRAIN.lr_discriminator = 2e-4
 _C.TRAIN.lr_scheduler = True
+_C.TRAIN.lr_mappingnetwork = 2e-4
+_C.TRAIN.lr_MLP = 2e-4
 # learning rate scheduler step size
 _C.TRAIN.scheduler_step_size = 100
 # power in poly to drop LR
@@ -144,17 +146,18 @@ _C.TRAIN.w_Div = 10.0
 _C.TRAIN.w_NCE = 2.0
 _C.TRAIN.w_Instance_NCE = 2.0
 _C.TRAIN.w_Cycle = 2.0
+_C.TRAIN.w_DClass = 1.0
 
 # frequency to save checkpoints 
 _C.TRAIN.save_epoch = 5
 # frequency to display training info
-_C.TRAIN.display_iter = 500
+_C.TRAIN.display_sample_iter = 500
 # frequency to save training images
 _C.TRAIN.image_save_iter = 1000
 # frequency to print training info on console
-_C.TRAIN.print_freq = 100
+_C.TRAIN.print_losses_iter = 100
 # frequency to display loss visualizations
-_C.TRAIN.display_freq = 200
+_C.TRAIN.display_losses_iter = 200
 # manual seed
 _C.TRAIN.seed = 304
 # use cuda
