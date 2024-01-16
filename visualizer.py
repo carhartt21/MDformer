@@ -251,9 +251,9 @@ class Visualizer():
             t_comp (float) -- computational time per data point (normalized by batch_size)
             t_data (float) -- data loading time per data point (normalized by batch_size)
         """
-        message = 'Epoch: %d, iters: %d, time: %.3f, data: %.3f' % (epoch, iters, t_comp, t_data)
+        message = 'Epoch: %d, iters: %d, time: %.3f, data: %.3f \n' % (epoch, iters, t_comp, t_data)
         for k, v in losses.items():
-            message += '%s: %.3f ' % (k, v)
+            message += '%s: %.3f \n' % (k, v)
 
         logging.info('+++ {}'.format(message))  # print the message
         with open(self.log_name, "a") as log_file:

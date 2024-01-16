@@ -229,7 +229,7 @@ if __name__ == "__main__":
                     visualizer.display_current_results(current_visuals, current_domains, epoch,
                                                        (total_iters % cfg.TRAIN.image_save_iter == 0))
             if (total_iters % cfg.TRAIN.print_freq) == 0:
-                visualizer.print_current_losses(epoch, i, losses, time.time() - iter_date_time,
+                visualizer.print_current_losses(epoch + 1, i, losses, time.time() - iter_date_time,
                                                 optimize_start_time - iter_date_time)
             # Save model & optimizer and example images
         if epoch > 0 and (epoch % cfg.TRAIN.save_epoch) == 0:
