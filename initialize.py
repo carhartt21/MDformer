@@ -40,7 +40,7 @@ def set_seed(seed=42):
     logging.info("+ Seed set to: {}".format(seed))
     return
 
-def build_model(model_cfg, device, distributed=False, num_domains=8):
+def build_model(cfg, device, distributed=False, num_domains=8):
     """
     Build the model for training.
 
@@ -60,12 +60,13 @@ def build_model(model_cfg, device, distributed=False, num_domains=8):
         dist.init_process_group(backend='nccl', init_method='env://')
         logging.info("++ Device : {}".format(device))
         # logging.info(f"model_cfg.gpu_ids : {model_cfg.gpu_ids}")
-
+    model_cfg = cfg.MODEL
     model_G = {}
     parameter_G = []
     model_D = {}
     parameter_D = []
     model_F = {}
+    parameter_F = []
 
     # domain_idxs = utils.get_domain_indexes(model_cfg.DATASET.target_domain_names)
     # logging.info("domain_idxs : {}".format(domain_idxs))
@@ -96,7 +97,7 @@ def build_model(model_cfg, device, distributed=False, num_domains=8):
                                                   n_generator_filters=model_cfg.n_generator_filters,
                                                   n_downsampling=model_cfg.n_downsampling))
     logging.info("++ Building the MLP Block") 
-    model_G['MLP_Adain'] = DataParallel(networks.MLP(input_dim=model_cfg.style_dim, output_dim=2176))
+    model_G['MLP_Adain'] = DataParallel(networks.MLP(input_dim=model_cfg.style_dim, output_dim=2*(model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim)))
 
     logging.info("++ Building the Mapping Network")
     model_G['MappingNetwork'] = DataParallel(networks.MappingNetwork(num_domains=num_domains, 
@@ -106,8 +107,10 @@ def build_model(model_cfg, device, distributed=False, num_domains=8):
     logging.info("++ Building the Discriminator")
     model_D['Discrim'] = DataParallel(networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3, num_domains=num_domains))
     logging.info("++ Building the MLP Heads for Loss Calculation")
-    model_F['MLP_head'] = DataParallel(networks.MLP_Head())
-    model_F['MLP_head_inst'] = DataParallel(networks.MLP_Head())
+    if (cfg.TRAIN.w_NCE>0.0):
+        model_F['MLP_head'] = DataParallel(networks.MLP_Head())
+    if (cfg.TRAIN.w_Instance_NCE>0.0):
+        model_F['MLP_head_inst'] = DataParallel(networks.MLP_Head())
 
     # model_G['ContentEncoder'] = DDP(networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling))
     
@@ -197,8 +200,9 @@ def build_model(model_cfg, device, distributed=False, num_domains=8):
         model_F[key] = nn.DataParallel(val)
         model_F[key].to(device)
         model_F[key].train()
+        parameter_F += list(val.parameters())
 
-    return model_G, parameter_G, model_D, parameter_D, model_F
+    return model_G, parameter_G, model_D, parameter_D, model_F, parameter_F
 
 
 def set_criterions(cfg: Any, device: str) -> Dict[str, Any]:
@@ -220,6 +224,7 @@ def set_criterions(cfg: Any, device: str) -> Dict[str, Any]:
     criterions['InstNCE'] = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu * cfg.DATASET.n_bbox).to(device)
     criterions['Style_Div'] = torch.nn.L1Loss().to(device)
     criterions['Cycle'] = torch.nn.L1Loss().to(device)
+    criterions['DClass'] = torch.nn.CrossEntropyLoss(ignore_index=-1).to(device)
     return criterions
 
 def criterion_test(cfg: Any, device: str) -> Dict[str, Any]:
@@ -240,4 +245,5 @@ def criterion_test(cfg: Any, device: str) -> Dict[str, Any]:
     criterions['InstNCE'] = utils.PatchNCELoss(cfg.TEST.batch_size * cfg.DATASET.n_bbox).to(device)
     criterions['Style_Div'] = torch.nn.L1Loss().to(device)
     criterions['Cycle'] = torch.nn.L1Loss().to(device)
+    criterions['DClass'] = torch.nn.CrossEntropyLoss(ignore_index=-1).to(device)
     return criterions
