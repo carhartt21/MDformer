@@ -50,11 +50,10 @@ def onehot_to_domain(onehot, target_domain_names=[], domain_dict='helper/data_cf
     assert len(idxs) == onehot.shape[0], "The number of domains in the one-hot vector does not match the number of target domains."
     onehot_all = torch.zeros(n_dom, dtype=onehot.dtype, device=onehot.device)
     onehot_all[idxs] = onehot
+    if onehot_all.sum() == 0:
+        return 'unknown'
     domain_keys = [value for key, value in domain_idxs.items() if int(key) == onehot_all.argmax().item()]
-    if len(domain_keys) == 0:
-        return "None"
-    else:
-       return domain_keys[0]
+    return domain_keys[0]
 
 def domain_to_onehot(domain, target_domain_names):
     """Convert domain name to one-hot vector."""
@@ -391,8 +390,11 @@ def tensor2im(input_image, imtype=np.uint8):
         image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0  # post-processing: tranpose and scaling
     else:  # if it is a numpy array, do nothing
         image_numpy = input_image
-    return image_numpy.astype(imtype)
-
+    try:
+        img = image_numpy.astype(imtype)
+        return img
+    except RuntimeError:
+        return np.ones_like(image_numpy.transpose([2, 0, 1])) * 255
 
 def save_image(image_numpy, image_path, aspect_ratio=1.0):
     """Save a numpy image to the disk
