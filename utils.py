@@ -296,7 +296,7 @@ def label_to_onehot(gt, num_classes, ignore_index=-1):
     N, _, _ = gt.size()
     gt_ = gt
     gt_[gt_ == ignore_index] = num_classes
-    onehot = torch.zeros(N, gt_.size(1), gt_.size(2), num_classes + 1).cuda()
+    onehot = torch.zeros(N, gt_.size(1), gt_.size(2), num_classes + 1)
     onehot = onehot.scatter_(-1, gt_.unsqueeze(-1), 1) 
 
     return onehot.permute(0, 3, 1, 2)
