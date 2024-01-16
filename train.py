@@ -103,12 +103,13 @@ if __name__ == "__main__":
     ref_provider = RefProvider(loader_ref=ref_loader, mode='train')
 
     # model_load
-    model_G, parameter_G, model_D, parameter_D, model_F = initialize.build_model(model_cfg=cfg.MODEL, device=device, num_domains=num_domains,
+    model_G, parameter_G, model_D, parameter_D, model_F, parameter_F = initialize.build_model(cfg=cfg, device=device, num_domains=num_domains,
                                                                                  distributed=cfg.TRAIN.distributed)
 
     # optimizer & scheduler
     optimizer_G = optim.Adam(parameter_G, float(cfg.TRAIN.lr_generator), betas=cfg.TRAIN.optim_beta)
     optimizer_D = optim.Adam(parameter_D, float(cfg.TRAIN.lr_discriminator), betas=cfg.TRAIN.optim_beta)
+    # optimizer_F = optim.Adam(parameter_F, float(cfg.TRAIN.lr_MLP), betas=cfg.TRAIN.optim_beta)
 
     if cfg.MODEL.load_optimizer:
         logger.info('Loading Adam optimizer')
@@ -117,12 +118,13 @@ if __name__ == "__main__":
         optim_load_dict_f = torch.load(os.path.join(cfg.MODEL.weight_path, 'adam_g.pth'), map_location=device)
         optimizer_G.load_state_dict(optim_load_dict_g)
         optimizer_D.load_state_dict(optim_load_dict_d)
+        # optimizer_F.load_state_dict(optim_load_dict_f)
 
-        # optimizer_F.load_state_dict(optim_load_dict)
     # TODO adjust lr for mapping network
     if cfg.TRAIN.lr_scheduler:
         lr_scheduler_G = optim.lr_scheduler.StepLR(optimizer_G, cfg.TRAIN.scheduler_step_size, 0.1)
         lr_scheduler_D = optim.lr_scheduler.StepLR(optimizer_D, cfg.TRAIN.scheduler_step_size, 0.1)
+        # lr_scheduler_F = optim.lr_scheduler.StepLR(optimizer_F, cfg.TRAIN.scheduler_step_size, 0.1)
 
     criterions = initialize.set_criterions(cfg, device)
 
@@ -197,7 +199,10 @@ if __name__ == "__main__":
             # Discriminator
             utils.set_requires_grad(model_D['Discrim'].module, True)
             optimizer_D.zero_grad()
-            total_D_loss, D_losses = loss.compute_D_loss(inputs=inputs, refs=refs, fake_img=fake_img, model_D=model_D,
+            total_D_loss, D_losses = loss.compute_D_loss(inputs=inputs, 
+                                                         refs=refs,  
+                                                         fake_img=fake_img, 
+                                                         model_D=model_D,
                                                          criterions=criterions)
             total_D_loss.backward()
             optimizer_D.step()
@@ -205,12 +210,25 @@ if __name__ == "__main__":
             # Generator
             utils.set_requires_grad(model_D['Discrim'].module, False)
             optimizer_G.zero_grad()
-            optimizer_F.zero_grad()
-            total_G_loss, G_losses = loss.compute_G_loss(inputs, refs, fake_imgs, recon_img, style_code, features,
-                                                         box_feature, model_G, model_D, model_F, criterions, cfg)
+            if (cfg.TRAIN.w_NCE > 0.0) or (cfg.TRAIN.w_Instance_NCE):
+                optimizer_F.zero_grad()
+            total_G_loss, G_losses = loss.compute_G_loss(inputs=inputs,
+                                                         refs=refs,
+                                                         fake_imgs=fake_imgs,
+                                                         d_src_pred=d_src_pred,
+                                                         recon_img=recon_img,
+                                                         style_code=style_code,
+                                                         features=features,
+                                                         box_feature=box_feature,
+                                                         model_G=model_G,
+                                                         model_D=model_D,
+                                                         model_F=model_F,
+                                                         criterions=criterions,
+                                                         cfg=cfg)
             total_G_loss.backward()
             optimizer_G.step()
-            optimizer_F.step()
+            if (cfg.TRAIN.w_NCE > 0.0) or (cfg.TRAIN.w_Instance_NCE):
+                optimizer_F.step()
 
             # Visualize(visdom)
             total_iters = epoch * cfg.TRAIN.epoch_iters + i
@@ -219,23 +237,24 @@ if __name__ == "__main__":
             losses.update(G_losses)
             losses.update(D_losses)
             if (cfg.VISDOM.enabled):
-                if (total_iters % cfg.TRAIN.display_freq) == 0:
+                if (total_iters % cfg.TRAIN.display_losses_iter) == 0:
                     visualizer.plot_current_losses(epoch, float(i) / len(data_loader),
                                                {k: v.item() for k, v in losses.items()})
-                if (total_iters % cfg.TRAIN.display_iter) == 0:
+                if (total_iters % cfg.TRAIN.display_sample_iter) == 0:
                     current_visuals = {'input_img': inputs.img_src, 'generated_img': fake_img,
                                        'reference_img': refs.img_ref, 'reconstructed_img': recon_img}
                     current_domains = {'source_domain': inputs.d_src, 'target_domain': refs.d_trg}
-                    visualizer.display_current_results(current_visuals, current_domains, epoch,
+                    visualizer.display_current_samples(current_visuals, current_domains, epoch,
                                                        (total_iters % cfg.TRAIN.image_save_iter == 0))
-            if (total_iters % cfg.TRAIN.print_freq) == 0:
+            if (total_iters % cfg.TRAIN.print_losses_iter) == 0:
                 visualizer.print_current_losses(epoch + 1, i, losses, time.time() - iter_date_time,
                                                 optimize_start_time - iter_date_time)
             # Save model & optimizer and example images
         if epoch > 0 and (epoch % cfg.TRAIN.save_epoch) == 0:
             utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_G, optimizer_G)
             utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_D, optimizer_D)
-            utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_F, optimizer_F)
+            if (cfg.TRAIN.w_NCE > 0.0) or (cfg.TRAIN.w_Instance_NCE):
+                utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_F, optimizer_F)
 
             utils.save_color(inputs.img_src, 'test/source_image', str(epoch))
             utils.save_color(fake_img, 'test/fake_1', str(epoch))
