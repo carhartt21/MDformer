@@ -314,8 +314,10 @@ class InputProvider:
         except (AttributeError, StopIteration):
             self.iter = iter(self.loader)
             x = next(self.iter)
+        if x == None:
+            self.iter= iter(self.loader)
+            x = next(self.iter_ref)
         return x
-
     def __next__(self):
         # return
         sample = self._fetch_inputs()
@@ -339,23 +341,23 @@ class InputProvider:
 class RefProvider:
     def __init__(self, loader_ref, mode=''):
         self.loader_ref = loader_ref
-        # self.iter_ref = iter(self.loader_ref)
+        self.iter_ref = iter(self.loader_ref)
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
         self.mode = mode
 
     def _fetch_refs(self, d_src=None):
         try:
             x = next(self.iter_ref, d_src)
-        except (AttributeError, StopIteration):
+        except (AttributeError, StopIteration) as e:
+            self.iter_ref = iter(self.loader_ref)
+            x = next(self.iter_ref, d_src)
+        if x == None:
             self.iter_ref = iter(self.loader_ref)
             x = next(self.iter_ref, d_src)
         return x
 
-
     def __next__(self, d_src=None):
         ref = self._fetch_refs(d_src)
-        while ref is None:
-            ref = self._fetch_refs(d_src)
         if self.mode == 'train':
             inputs = Munch(img_ref = ref.img, d_trg=ref.domain)
         elif self.mode == 'val':
