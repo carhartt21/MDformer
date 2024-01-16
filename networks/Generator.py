@@ -6,7 +6,7 @@ import logging
 from . import blocks
 
 class Generator(nn.Module):
-    def __init__(self, input_size=88, patch_size=8, embed_C=1024, feat_C=256, n_generator_filters=64, n_downsampling=2, use_bias=True):
+    def __init__(self, input_size=96, patch_size=8, embed_C=1024, feat_C=256, n_generator_filters=64, n_downsampling=2, use_bias=True):
         super(Generator, self).__init__()
         
 

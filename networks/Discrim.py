@@ -54,15 +54,16 @@ class NLayerDiscriminator(nn.Module):
             norm_layer(ndf * nf_mult),
             nn.LeakyReLU(0.2, True)
         ]
-#TODO num_domains instead of 1 and adjust forward accordingly (add y as input)
         sequence += [nn.Conv2d(ndf * nf_mult, num_domains, kernel_size=kw, stride=1, padding=padw)]  # output 1 channel prediction map
+        
         self.model = nn.Sequential(*sequence)
 
     def forward(self, x, y):
         """Standard forward."""
         out = self.model(x)
-        # out = out.view(out.size(0), -1)  # (batch, num_domains)
         idx = torch.LongTensor(range(y.size(0))).to(y.device)
-        y = y.type(torch.int32)
-        out = out[:, y, :, :]  # (batch)
+        y = y.argmax(dim = 1).to(torch.int32)
+        # out shape : (batch, num_domains, n_disc_patch, n_disc_patch)
+        out = out[idx, y]
+        # out shape : (batch, n_disc_patch, n_disc_patch)
         return out
