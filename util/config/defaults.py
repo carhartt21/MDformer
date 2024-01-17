@@ -141,7 +141,6 @@ _C.TRAIN.workers = 16
 # weights for losses
 _C.TRAIN.w_GAN = 1.0
 _C.TRAIN.w_Recon = 10.0
-_C.TRAIN.w_Style = 10.0
 _C.TRAIN.w_StyleDiv = 10.0
 _C.TRAIN.w_NCE = 2.0
 _C.TRAIN.w_Instance_NCE = 2.0
