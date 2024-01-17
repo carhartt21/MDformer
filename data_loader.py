@@ -324,8 +324,8 @@ class InputProvider:
         # ref = self._fetch_refs()        
         if self.mode == 'train':
             lat_trg = torch.randn(sample.img.size(0), self.latent_dim)
-            lat_trg2 = torch.randn(sample.img.size(0), self.latent_dim)
-            inputs = Munch(img_src=sample.img, d_src=sample.domain, seg = sample.sem_labels, lat_trg=lat_trg, lat_trg2=lat_trg2, bbox=sample.bboxes)
+            lat_trg_2 = torch.randn(sample.img.size(0), self.latent_dim)
+            inputs = Munch(img_src=sample.img, d_src=sample.domain, seg = sample.sem_labels, lat_trg=lat_trg, lat_trg_2=lat_trg_2, bbox=sample.bboxes)
         elif self.mode == 'val':
             lat_trg = torch.randn(sample.img.size(0), self.latent_dim)
             inputs = Munch(img_src=sample.img, d_src=sample.domain, seg=sample.sem_labels, lat_trg=lat_trg)

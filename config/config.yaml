@@ -12,12 +12,13 @@ TRAIN:
   lr_scheduler: False
   scheduler_step_size: 150
   w_GAN: 1.0 # weight for GAN loss
-  w_Recon: 10.0 # weight for recon loss
-  w_Style: 10.0 # weight for style loss
-  w_NCE: 2.0 # weight for NCE loss
-  w_Instance_NCE: 2.0 # weight for instance NCE loss
+  w_Recon: 1.0 # weight for recon loss
+  w_Style: 1.0 # weight for style loss
+  w_NCE: 1.0 # weight for NCE loss
+  w_Instance_NCE: 1.0 # weight for instance NCE loss
   w_Cycle : 1.0
   w_DClass : 1.0  
+  w_StyleDiv : 0.0
   display_sample_iter: 1 # frequency of displaying the latest results in visdom
   display_losses_iter: 1 # frequency of displaying losses in visdom
   save_epoch: 5 # frequency of saving checkpoints at the end of epochs
