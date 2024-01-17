@@ -61,14 +61,14 @@ if __name__ == "__main__":
     cfg.merge_from_file(args.cfg)
     cfg.merge_from_list(args.opts)
 
-    logger.info('Loaded configuration file {}'.format(args.cfg))
+    logger.info('+ Loaded configuration file {}'.format(args.cfg))
 
-    if not os.path.isdir(cfg.TRAIN.log_path):
-        os.makedirs(cfg.TRAIN.log_path)
-    with open(os.path.join(cfg.TRAIN.log_path, 'config_{}.yaml'.format(cfg.MODEL.name)), 'w') as f:
+    log_path_model = os.path.join(cfg.TRAIN.log_path, cfg.MODEL.name)
+    if not os.path.isdir(log_path_model):
+        os.makedirs(log_path_model)
+    with open(os.path.join(log_path_model, 'config_{}.yaml'.format(cfg.MODEL.name)), 'w') as f:
         f.write("{}".format(cfg))
 
-    # train_cfg = DotMap(conf['Train'])
     device = torch.device('cuda:{}'.format(cfg.TRAIN.gpu_ids[0])) if cfg.TRAIN.gpu_ids else torch.device('cpu')
 
     # seed
