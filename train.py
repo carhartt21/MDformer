@@ -168,17 +168,19 @@ if __name__ == "__main__":
 
             # Model Forward
             fake_img, fake_box, features, d_src_pred = loss.model_forward_generation(inputs=inputs,
+                                                                                     lat_trg = inputs.lat_trg,
                                                                                      refs = refs,
                                                                                      model=model_G,
                                                                                      n_bbox=cfg.DATASET.n_bbox,
                                                                                      feat_layers=cfg.MODEL.feat_layers)
-            if cfg.TRAIN.w_Div > 0.0:
+            if cfg.TRAIN.w_StyleDiv > 0.0:
                 fake_img_2, _, _, _ = loss.model_forward_generation(inputs=inputs, refs=refs,
+                                                                    lat_trg=inputs.lat_trg_2,
                                                                     model=model_G,
                                                                     feat_layers=cfg.MODEL.feat_layers)
             else:
-                fake_img_2 = torch.empty(1).to(device)
-            recon_img, style_code = loss.model_forward_reconstruction(inputs=inputs, fake_img=fake_img,
+                fake_img_2 = torch.empty(0).to(device)
+            recon_img, style_code, d_fake_pred = loss.model_forward_reconstruction(inputs=inputs, fake_img=fake_img,
                                                                       model=model_G, d_src_pred=d_src_pred,
                                                                       feat_layers=cfg.MODEL.feat_layers)
             if cfg.DATASET.n_bbox > 0 and len(features) > len(cfg.MODEL.feat_layers):
@@ -202,7 +204,6 @@ if __name__ == "__main__":
 
             # Backward & Optimizer
             optimize_start_time = time.time()
-            fake_imgs = [fake_img, fake_img_2]
             # Discriminator
             utils.set_requires_grad(model_D['Discrim'].module, True)
             optimizer_D.zero_grad()
@@ -215,6 +216,7 @@ if __name__ == "__main__":
             optimizer_D.step()
 
             # Generator
+            fake_imgs = [fake_img, fake_img_2]
             utils.set_requires_grad(model_D['Discrim'].module, False)
             optimizer_G.zero_grad()
             if (cfg.TRAIN.w_NCE > 0.0) or (cfg.TRAIN.w_Instance_NCE):
@@ -224,13 +226,13 @@ if __name__ == "__main__":
                                                          fake_imgs=fake_imgs,
                                                          d_src_pred=d_src_pred,
                                                          recon_img=recon_img,
-                                                         style_code=style_code,
                                                          features=features,
                                                          box_feature=box_feature,
                                                          model_G=model_G,
                                                          model_D=model_D,
                                                          model_F=model_F,
                                                          criterions=criterions,
+                                                         d_fake_img_pred=d_fake_pred,
                                                          cfg=cfg)
             total_G_loss.backward()
             optimizer_G.step()
@@ -248,9 +250,9 @@ if __name__ == "__main__":
                     visualizer.plot_current_losses(epoch, float(i) / len(data_loader),
                                                {k: v.item() for k, v in losses.items()})
                 if (total_iters % cfg.TRAIN.display_sample_iter) == 0:
-                    current_visuals = {'input_img': inputs.img_src, 'generated_img': fake_img,
+                    current_visuals = {'input_img': inputs.img_src, 'generated_img_1': fake_img,
                                        'reference_img': refs.img_ref, 'reconstructed_img': recon_img}
-                    current_domains = {'source_domain': inputs.d_src, 'target_domain': refs.d_trg}
+                    current_domains = {'source_domain': inputs.d_src, 'predicted domain': d_src_pred, 'target_domain': refs.d_trg}
                     visualizer.display_current_samples(current_visuals, current_domains, epoch,
                                                        (total_iters % cfg.TRAIN.image_save_iter == 0))
             if (total_iters % cfg.TRAIN.print_losses_iter) == 0:
@@ -265,6 +267,6 @@ if __name__ == "__main__":
 
             utils.save_color(inputs.img_src, 'test/source_image', str(epoch))
             utils.save_color(fake_img, 'test/fake_1', str(epoch))
-            if cfg.TRAIN.w_Div > 0.0:
+            if cfg.TRAIN.w_StyleDiv > 0.0:
                 utils.save_color(fake_img_2, 'test/fake_2', str(epoch))
             utils.save_color(recon_img, 'test/recon', str(epoch))
