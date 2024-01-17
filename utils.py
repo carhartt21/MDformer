@@ -19,7 +19,7 @@ import torch.nn.functional as F
 
 
 ##################################### Visualize ##################################### 
-def matrix_to_one_hot(matrix):
+def batch_to_onehot(matrix):
     """
     Translate every row of a matrix to a one-hot vector.
 
