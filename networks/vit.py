@@ -32,7 +32,7 @@ class FeedForward(nn.Module):
         return self.net(x)
 
 class Attention(nn.Module):
-    def __init__(self, dim, heads = 8, dim_head = 64, dropout = 0.):
+    def __init__(self, dim, heads = 8, dim_head = 64, dropout = 0., vis=False):
         # Args:
         #   dim: input dimension 
         #   heads: number of attention heads
@@ -41,7 +41,7 @@ class Attention(nn.Module):
         # 
 
         super().__init__()
-
+        self.vis = vis
         assert dim % heads == 0
 
         # inner dimension of the model
@@ -71,11 +71,15 @@ class Attention(nn.Module):
         dots = torch.matmul(q, k.transpose(-1, -2)) * self.scale
         
         attn = self.attend(dots)
+        if self.vis:
+            weights = attn
+        else:
+            weights = None
         attn = self.dropout(attn)
 
         out = torch.matmul(attn, v)
         out = rearrange(out, 'b h n d -> b n (h d)')
-        return self.to_out(out)
+        return self.to_out(out), weights
 
 class Transformer(nn.Module):
     def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):

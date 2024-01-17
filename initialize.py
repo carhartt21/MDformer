@@ -86,7 +86,8 @@ def build_model(cfg, device, distributed=False, num_domains=8):
                                                                  feat_C=model_cfg.n_generator_filters*2**(model_cfg.n_downsampling), 
                                                                  depth=model_cfg.TRANSFORMER.depth, 
                                                                  heads=model_cfg.TRANSFORMER.heads, 
-                                                                 mlp_dim=model_cfg.TRANSFORMER.mlp_dim))
+                                                                 mlp_dim=model_cfg.TRANSFORMER.mlp_dim,
+                                                                 vis = False))
     logging.info("++ Building the DomainClassifier")
     model_G['DomainClassifier'] = DataParallel(networks.TransformerClassifier(input_dim=model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim, num_classes=num_domains))
     logging.info("++ Building the Generator")

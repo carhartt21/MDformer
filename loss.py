@@ -33,9 +33,9 @@ def model_forward_generation(inputs: Union[torch.Tensor, dict], refs, model: dic
         features += [model['Transformer'].module.module.extract_box_feature(feat_content, inputs.bbox, n_bbox)]
 
     if n_bbox == -1:
-        aggregated_feat, _ = model['Transformer'](feat_content, sem_embed=True, sem_labels=inputs.seg, n_bbox=n_bbox)
+        aggregated_feat, _, _ = model['Transformer'](feat_content, sem_embed=True, sem_labels=inputs.seg, n_bbox=n_bbox)
     else:
-        aggregated_feat, aggregated_box = model['Transformer'](feat_content, sem_labels=inputs.seg, bbox_info=inputs.bbox, n_bbox=n_bbox)        
+        aggregated_feat, aggregated_box, weights = model['Transformer'](feat_content, sem_labels=inputs.seg, bbox_info=inputs.bbox, n_bbox=n_bbox)        
 
     d_src_pred = model['DomainClassifier'](aggregated_feat)
     fake = model['Generator'](aggregated_feat)
@@ -66,7 +66,7 @@ def model_forward_reconstruction(inputs: Union[torch.Tensor, dict], fake_img: to
     style_code = model['StyleEncoder'](inputs.img_src, torch.argmax(d_recon_trg, dim=1))
     utils.assign_adain_params(model['MLP_Adain'](style_code), model['Transformer'].module.module.transformer.layers)
 
-    aggregated_feat, _ = model['Transformer'](feat_content, sem_embed=False, n_bbox=-1)
+    aggregated_feat, _, weights = model['Transformer'](feat_content, sem_embed=False, n_bbox=-1)
 
     rec_img = model['Generator'](aggregated_feat)
     return rec_img, style_code

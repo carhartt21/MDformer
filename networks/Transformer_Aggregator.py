@@ -22,12 +22,13 @@ class PreInstanceNorm(nn.Module):
         return self.fn(self.norm(x), **kwargs)
 
 class AdaIn_Transformer(nn.Module):
-    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0.):
+    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0., vis=False):
         super().__init__()
         self.layers = nn.ModuleList([])
+        self.vis = vis
         for _ in range(depth):
             self.layers.append(nn.ModuleList([
-                PreInstanceNorm(dim, vit.Attention(dim, heads = heads, dim_head = dim_head, dropout = dropout)),
+                PreInstanceNorm(dim, vit.Attention(dim, heads = heads, dim_head = dim_head, dropout = dropout, vis = vis)),
                 PreInstanceNorm(dim, vit.FeedForward(dim, mlp_dim, dropout = dropout))
             ]))
         self.hooks = []
@@ -38,22 +39,26 @@ class AdaIn_Transformer(nn.Module):
 
     def forward(self, x):
         i = 0
+        w = []
         ll = []
         for attn, ff in self.layers:
-            x = attn(x) + x      
+            _x, _w = attn(x)
+            x += _x 
+            if self.vis:
+                w.append(_w)      
             x = ff(x) + x
             if i in self.hooks:
                 ll.append(x)
             i += 1
 
         self.features = tuple(ll)
-        return x
+        return x, w
 
 
 class Transformer_Aggregator(nn.Module):
     # TODO: Add support for multiple layers
     
-    def __init__(self, input_size: int = 88, patch_size: int = 8, patch_embed_C: int = 1024, sem_embed_C: int = 64, feat_C: int = 256, depth: int = 6, heads: int = 4, mlp_dim: int =4096, num_sem_classes: int = 16, num_classes: int = 16):
+    def __init__(self, input_size: int = 88, patch_size: int = 8, patch_embed_C: int = 1024, sem_embed_C: int = 64, feat_C: int = 256, depth: int = 6, heads: int = 4, mlp_dim: int =4096, num_sem_classes: int = 16, num_classes: int = 16, vis: bool = False):
         '''
         Transformer Aggregator
         Args:
@@ -64,12 +69,14 @@ class Transformer_Aggregator(nn.Module):
             depth: dimension of transformer
             heads: heads of transformer
             mlp_dim: mlp dimension
+            vis: visualize attention maps
         '''
         super(Transformer_Aggregator, self).__init__()
         self.input_size = input_size
         self.patch_size = patch_size
         self.patch_embed_C = patch_embed_C
         self.sem_embed_C = sem_embed_C
+        self.vis = vis
 
         # Patch Embedding
         self.patch_embed = blocks.PatchEmbedding(
@@ -110,7 +117,7 @@ class Transformer_Aggregator(nn.Module):
         self.pos_embed = torch.cat((cls_embed, self.pos_embed), dim=1)
 
         # Transformer
-        self.transformer = AdaIn_Transformer(dim=self.total_embed_C, depth=depth, heads=heads, dim_head=feat_C, mlp_dim=mlp_dim, dropout=0.)
+        self.transformer = AdaIn_Transformer(dim=self.total_embed_C, depth=depth, heads=heads, dim_head=feat_C, mlp_dim=mlp_dim, dropout=0., vis= self.vis)
 
     def extract_box_feature(self, out, box, n_bbox):
         '''
@@ -252,7 +259,7 @@ class Transformer_Aggregator(nn.Module):
         # Add positional embeddings except for the box embeddings
 
         # Pass the modified 'x' through the transformer layer
-        out = self.transformer(patch_embed_x)
+        out, weights = self.transformer(patch_embed_x)
 
         # Extract the aggregated features and boxes
         if n_bbox > 0:
@@ -261,6 +268,6 @@ class Transformer_Aggregator(nn.Module):
         # If n_bbox <= 0, return only the aggregated features
             aggregated_feat, aggregated_box = out, None
 
-        return aggregated_feat, aggregated_box
+        return aggregated_feat, aggregated_box, weights
         
         
