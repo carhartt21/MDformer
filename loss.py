@@ -177,8 +177,11 @@ def compute_G_loss(inputs: Dict,
         else: 
             G_losses['class_loss'] = torch.tensor(0.0).to(inputs.img_src.device)
             
-    for loss in G_losses.values():
-        total_G_loss += loss
+    for key, loss in G_losses.items():
+        if (key == 'style_div_loss'):
+            total_G_loss -= loss
+        else: 
+            total_G_loss += loss
 
     return total_G_loss, G_losses
 
