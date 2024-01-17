@@ -26,7 +26,6 @@ from data_loader import MultiDomainDataset, InputProvider, RefProvider, get_trai
 # EVAL = 0
 
 parser = argparse.ArgumentParser(description='arguments yaml load')
-parser.add_argument("--conf", type=str, help="configuration file path", default="./config/base_train.yaml")
 
 args = parser.parse_args()
 
