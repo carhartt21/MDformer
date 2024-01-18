@@ -77,12 +77,13 @@ class Transformer_Aggregator(nn.Module):
         self.patch_embed_C = patch_embed_C
         self.sem_embed_C = sem_embed_C
         self.vis = vis
+        stem = True if patch_size == 8 else False
 
         # Patch Embedding
         self.patch_embed = blocks.PatchEmbedding(
-            input_size=input_size, patch_size=patch_size, in_chans=feat_C, embed_dim=self.patch_embed_C)
+            input_size=input_size, patch_size=patch_size, in_chans=feat_C, embed_dim=self.patch_embed_C, STEM=stem)
         self.box_embed = blocks.PatchEmbedding(
-            input_size=patch_size, patch_size=patch_size, in_chans=feat_C, embed_dim=self.patch_embed_C)
+            input_size=patch_size, patch_size=patch_size, in_chans=feat_C, embed_dim=self.patch_embed_C, STEM=stem)
         
         # Semantic Embedding
         self.sem_embed = blocks.SemanticEmbedding(num_sem_classes=num_sem_classes, embed_dim=self.sem_embed_C)
