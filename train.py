@@ -16,10 +16,10 @@ import utils
 import initialize
 import loss
 from visualizer import Visualizer
-from collections import OrderedDict
+# from collections import OrderedDict
 from data import create_dataset
 from util.config import cfg
-
+from munch import Munch
 from data_loader import MultiDomainDataset, InputProvider, RefProvider, get_train_loader, get_ref_loader
 
 # TRAIN = 1
@@ -102,18 +102,17 @@ if __name__ == "__main__":
         max_dataset_size=cfg.DATASET.max_dataset_size
     )
 
-
-
     input_provider = InputProvider(loader=data_loader, latent_dim=cfg.MODEL.latent_dim, mode='train',
                                    num_domains=cfg.DATASET.num_domains)
     ref_provider = RefProvider(loader_ref=ref_loader, mode='train')
 
     # model_load
-    model_G, parameter_G, model_D, parameter_D, model_F, parameter_F = initialize.build_model(cfg=cfg, device=device, num_domains=num_domains,
+    model_G, parameter_G, model_D, parameter_D, model_F, parameter_F, parameter_M = initialize.build_model(cfg=cfg, device=device, num_domains=num_domains,
                                                                                  distributed=cfg.TRAIN.distributed)
 
     # optimizer & scheduler
     optimizer_G = optim.Adam(parameter_G, float(cfg.TRAIN.lr_generator), betas=cfg.TRAIN.optim_beta)
+    optimizer_M = optim.Adam(parameter_M, float(cfg.TRAIN.lr_mappingnetwork), betas=cfg.TRAIN.optim_beta)
     optimizer_D = optim.Adam(parameter_D, float(cfg.TRAIN.lr_discriminator), betas=cfg.TRAIN.optim_beta)
     # optimizer_F = optim.Adam(parameter_F, float(cfg.TRAIN.lr_MLP), betas=cfg.TRAIN.optim_beta)
 
@@ -189,9 +188,9 @@ if __name__ == "__main__":
             if epoch == 0 and i == 0 and (
                     cfg.TRAIN.w_NCE != 0.0 or (cfg.TRAIN.w_Instance_NCE != 0.0 and cfg.TRAIN.data.n_bbox > 0)):
                 if cfg.TRAIN.w_NCE != 0.0:
-                    model_F['MLP_head'].module.module.create_mlp(feats=features, device=device)
+                    model_F.MLP_head.module.module.create_mlp(feats=features, device=device)
                 if (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0):
-                    model_F['MLP_head_inst'].module.module.create_mlp(feats=[box_feature], device=device)
+                    model_F.MLP_head_inst.module.module.create_mlp(feats=[box_feature], device=device)
 
                 parameter_F = []
                 for key, val in model_F.items():
@@ -204,7 +203,7 @@ if __name__ == "__main__":
             # Backward & Optimizer
             optimize_start_time = time.time()
             # Discriminator
-            utils.set_requires_grad(model_D['Discrim'].module, True)
+            utils.set_requires_grad(model_D.Discrim.module, True)
             optimizer_D.zero_grad()
             total_D_loss, D_losses = loss.compute_D_loss(inputs=inputs, 
                                                          refs=refs,  
@@ -216,7 +215,7 @@ if __name__ == "__main__":
 
             # Generator
             fake_imgs = [fake_img, fake_img_2]
-            utils.set_requires_grad(model_D['Discrim'].module, False)
+            utils.set_requires_grad(model_D.Discrim.module, False)
             optimizer_G.zero_grad()
             if (cfg.TRAIN.w_NCE > 0.0) or (cfg.TRAIN.w_Instance_NCE):
                 optimizer_F.zero_grad()
