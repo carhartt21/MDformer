@@ -261,8 +261,8 @@ if __name__ == "__main__":
             if (cfg.TRAIN.w_NCE > 0.0) or (cfg.TRAIN.w_Instance_NCE):
                 utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_F, optimizer_F)
 
-            utils.save_color(inputs.img_src, 'test/source_image', str(epoch))
-            utils.save_color(fake_img, 'test/fake_1', str(epoch))
+            utils.save_image_from_tensor(inputs.img_src, '{}/{}_source_image'.format(cfg.TRAIN.log_path, cfg.MODEL.name), str(epoch))
+            utils.save_image_from_tensor(fake_img, '{}/{}_fake_1'.format(cfg.TRAIN.log_path, cfg.MODEL.name), str(epoch))
             if cfg.TRAIN.w_StyleDiv > 0.0:
-                utils.save_color(fake_img_2, 'test/fake_2', str(epoch))
-            utils.save_color(recon_img, 'test/recon', str(epoch))
+                utils.save_image_from_tensor(fake_img_2, '{}/{}_fake_2'.format(cfg.TRAIN.log_path, cfg.MODEL.name), str(epoch))
+            utils.save_image_from_tensor(recon_img, '{}/{}_recon'.format(cfg.TRAIN.log_path, cfg.MODEL.name), str(epoch))
