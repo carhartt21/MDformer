@@ -232,9 +232,23 @@ _C.VAL.checkpoint = 'epoch_20.pth'
 # Testing
 # -----------------------------------------------------------------------------
 _C.TEST = CN()
+# dir
+_C.TEST.dir = 'data/test_images'
 # currently only supports 1
 _C.TEST.batch_size = 1
 # the checkpoint to test on
 _C.TEST.checkpoint = 'epoch_20.pth'
 # folder to output visualization results
 _C.TEST.result = './'
+# epcch to load
+_C.TEST.load_epoch = 20
+# batch size
+_C.TEST.batch_size = 1
+# number of images
+_C.TEST.num_images = 1000
+# target_domains
+_C.TEST.target_domains = ['summer', 'winter', 'spring', 'autumn']
+# psi for style mixing
+_C.TEST.psi = 1.0
+# number of images per domain
+_C.TEST.num_images_per_domain = 1
