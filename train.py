@@ -102,9 +102,8 @@ if __name__ == "__main__":
         max_dataset_size=cfg.DATASET.max_dataset_size
     )
 
-    input_provider = InputProvider(loader=data_loader, latent_dim=cfg.MODEL.latent_dim, mode='train',
-                                   num_domains=cfg.DATASET.num_domains)
-    ref_provider = RefProvider(loader_ref=ref_loader, mode='train')
+    input_provider = InputProvider(loader=data_loader, latent_dim=cfg.MODEL.latent_dim, num_domains=cfg.DATASET.num_domains)
+    ref_provider = RefProvider(loader_ref=ref_loader)
 
     # model_load
     model_G, parameter_G, model_D, parameter_D, model_F, parameter_F, parameter_M = initialize.build_model(cfg=cfg, device=device, num_domains=num_domains,
@@ -155,14 +154,13 @@ if __name__ == "__main__":
         for i in range(0, cfg.TRAIN.epoch_iters//cfg.TRAIN.batch_size_per_gpu):
             inputs = next(input_provider)
             refs = next(ref_provider, inputs.d_src)
-            # get a new target sample if the domain of target and source is same
-            for key, val in inputs.items():
-                if isinstance(val, torch.Tensor):
-                    inputs[key] = val.to(device)
-            for key, val in refs.items():
-                if isinstance(val, torch.Tensor):
-                    refs[key] = val.to(device)
-            
+            # for key, val in inputs.items():
+            #     if isinstance(val, torch.Tensor):
+            #         inputs[key] = val.to(device)
+            # for key, val in refs.items():
+            #     if isinstance(val, torch.Tensor):
+            #         refs[key] = val.to(device)
+
 
             # Model Forward
             fake_img, fake_box, features, d_src_pred = loss.model_forward_generation(inputs=inputs,
@@ -188,9 +186,9 @@ if __name__ == "__main__":
             if epoch == 0 and i == 0 and (
                     cfg.TRAIN.w_NCE != 0.0 or (cfg.TRAIN.w_Instance_NCE != 0.0 and cfg.TRAIN.data.n_bbox > 0)):
                 if cfg.TRAIN.w_NCE != 0.0:
-                    model_F.MLP_head.module.module.create_mlp(feats=features, device=device)
+                    model_F.MLP_head.module.create_mlp(feats=features, device=device)
                 if (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0):
-                    model_F.MLP_head_inst.module.module.create_mlp(feats=[box_feature], device=device)
+                    model_F.MLP_head_inst.module.create_mlp(feats=[box_feature], device=device)
 
                 parameter_F = []
                 for key, val in model_F.items():

@@ -29,9 +29,9 @@ def model_forward_generation(inputs: Union[torch.Tensor, dict], refs, lat_trg, m
     # when performing generation, the input is the content image from the data loader
     feat_content, features = model.ContentEncoder(inputs.img_src, feat_layers)
     style_code = model.MappingNetwork(lat_trg, refs.d_trg)
-    utils.assign_adain_params(model.MLP_Adain(style_code), model.Transformer.module.module.transformer.layers)
+    utils.assign_adain_params(model.MLP_Adain(style_code), model.Transformer.module.transformer.layers)
     if 'bbox' in inputs and n_bbox != -1:
-        features += [model.Transformer.module.module.extract_box_feature(feat_content, inputs.bbox, n_bbox)]
+        features += [model.Transformer.module.extract_box_feature(feat_content, inputs.bbox, n_bbox)]
 
     if n_bbox == -1:
         aggregated_feat, _, _ = model.Transformer(feat_content, sem_embed=True, sem_labels=inputs.seg, n_bbox=n_bbox)
@@ -68,7 +68,7 @@ def model_forward_reconstruction(inputs: Union[torch.Tensor, dict], fake_img: to
     lat_recon_trg = torch.randn(inputs.lat_trg.shape).to(inputs.lat_trg.device)
     # use mapping network to generate a style code for the reconstruction
     recon_style_code = model.MappingNetwork(lat_recon_trg, d_recon_trg)
-    utils.assign_adain_params(model.MLP_Adain(recon_style_code), model.Transformer.module.module.transformer.layers)
+    utils.assign_adain_params(model.MLP_Adain(recon_style_code), model.Transformer.module.transformer.layers)
     # use segmenation map from source also for reconstruction
     aggregated_feat, _, _ = model.Transformer(feat_content, sem_embed=True, sem_labels=inputs.seg, n_bbox=-1)
     # aggregated_feat, _, weights = model.Transformer(feat_content, sem_embed=False, n_bbox=-1)
@@ -154,7 +154,7 @@ def compute_G_loss(inputs: Dict,
     if cfg.TRAIN.w_NCE > 0.0 or (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0):
         fake_feat_content, fake_features = model_G.ContentEncoder(fake_img, cfg.MODEL.feat_layers)
         if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0:
-            fake_box_feature = model_G.Transformer.module.module.extract_box_feature(fake_feat_content, inputs.bbox, cfg.DATASET.n_bbox)
+            fake_box_feature = model_G.Transformer.module.extract_box_feature(fake_feat_content, inputs.bbox, cfg.DATASET.n_bbox)
 
     if cfg.TRAIN.w_NCE > 0.0:
         G_losses.NCE_loss = cfg.TRAIN.w_NCE * compute_NCE_loss(fake_features, features, model_F.MLP_head, criterions.NCE, cfg.MODEL.num_patches)
