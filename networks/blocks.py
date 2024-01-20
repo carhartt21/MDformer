@@ -459,10 +459,10 @@ class PatchEmbedding(nn.Module):
         input_size = to_2tuple(input_size)
         patch_size = to_2tuple(patch_size)
         self.input_size = input_size
-        self.patch_size = patch_size
+        # self.patch_size = patch_size
         # grid size is the number of patches in the image
-        self.grid_size = (input_size[0] // patch_size[0], input_size[1] // patch_size[1])
-        self.num_patches = self.grid_size[0] * self.grid_size[1]
+        # self.grid_size = (input_size[0] // patch_size[0], input_size[1] // patch_size[1])
+        # self.num_patches = self.grid_size[0] * self.grid_size[1]
 
         # if STEM is true, we use a stem conv layer to project the input image to a feature map of size embed_dim
         # stem conv layer is a 3x3 conv layer with stride 2, followed by a 3x3 conv layer with stride 2, followed by a 3x3 conv layer with stride 2, followed by a 1x1 conv layer
@@ -487,7 +487,7 @@ class PatchEmbedding(nn.Module):
         x = self.norm(x)
         return x
 
-# TODO: test different embedding sizes
+
 class SemanticEmbedding(nn.Module):
     def __init__(self, num_sem_classes, embed_dim):
         super().__init__()
