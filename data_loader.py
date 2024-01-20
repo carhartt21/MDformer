@@ -72,12 +72,13 @@ def parse_input_folders(input_file, max_sample=-1, start_idx=-1, end_idx=-1):
 
 
 class MultiDomainDataset(data.Dataset):
-    def __init__(self, train_list=None, transform=None, target_domain_names=[], max_sample=-1):
+    def __init__(self, train_list=None, transform=None, target_domain_names=[], max_sample=-1, input_size= (320, 320)):
         self.imgs, self.domains = [], []
         self.train_list = train_list
         self.target_domain_names = target_domain_names
         self.transform = transform
         self.max_sample = max_sample
+        self.input_size = input_size
         self._make_dataset()
 
     def _make_dataset(self):
@@ -104,18 +105,19 @@ class MultiDomainDataset(data.Dataset):
         try:
             img = Image.open(img_path).convert('RGB')
         except UnidentifiedImageError:
-            img = Image.new('RGB', (384, 384))
+            img = Image.new('RGB', self.input_size)
         sample = Munch(img=img, domain=domain)
         parent, name = str(img_path.parent), img_path.name        
-        seg_path = os.path.join(parent.replace('images', 'sem_labelss'), name.replace('.jpg', '.png'))
+        seg_path = os.path.join(parent.replace('images', 'seg_masks'), name.replace('.jpg', '.png'))
         if os.path.exists(seg_path):
             try:
-                sem_labels = Image.open(seg_path).convert('L')
+                seg_masks = Image.open(seg_path).convert('L')
             except UnidentifiedImageError:
-                sem_labels = Image.new('L', (352, 352))
+                seg_masks = Image.new('L', img.size)
         else:
-            sem_labels  = Image.new('L', (352, 352))
-        sample.sem_labels = sem_labels
+            logging.error('++ No semantic labels found for: {}'.format(seg_path))
+            seg_masks  = Image.new('L', img.size)
+        sample.seg_masks = seg_masks
         if self.transform is not None:
             sample = self.transform(sample)
         sample.domain = torch.tensor(sample.domain)
@@ -125,13 +127,14 @@ class MultiDomainDataset(data.Dataset):
         return len(self.domains)
 
 class ReferenceDataset(data.Dataset):
-    def __init__(self, ref_list, transform=None, target_domain_names=[], max_sample=-1):
+    def __init__(self, ref_list, transform=None, target_domain_names=[], max_sample=-1, input_size=(320, 320)):
         self.ref_samples, self.ref_domains = [], []
         self.ref_list = ref_list
         self.transform = transform
         # target domains are the domains that we want to transfer to
         self.target_domain_names = target_domain_names
         self.max_sample = max_sample
+        self.input_size = input_size
         self._make_dataset()
 
     def _make_dataset(self):
@@ -148,7 +151,9 @@ class ReferenceDataset(data.Dataset):
 
     def __getitem__(self, index, d_src=None):
         # make sure that the reference image is not from the same domain as the source image
+        #TODO: doesn't work yet because __getitem__ passes only one value
         if d_src is not None:
+            logging.info('d_src:{} ref_domains:{}'.format(torch.argmax(d_src), torch.argmax(self.ref_domains[index])))
             while torch.equal(torch.argmax(d_src), torch.argmax(self.ref_domains[index])):
                 index = random.randint(1, len(self.ref_samples) - 100)
                 file_path = self.ref_samples[index]
@@ -159,7 +164,7 @@ class ReferenceDataset(data.Dataset):
         try:
             img = Image.open(file_path).convert('RGB')
         except UnidentifiedImageError:
-            img = Image.new('RGB', (384, 384))
+            img = Image.new('RGB', self.input_size)
         if self.transform is not None:
             img = self.transform(img)       
         sample = Munch(img=img, domain=domain)
@@ -167,6 +172,50 @@ class ReferenceDataset(data.Dataset):
 
     def __len__(self):
         return len(self.ref_samples)
+    
+class TestDataset(data.Dataset):
+    def __init__(self, test_dir='', transform=None, target_domain_names=[], max_sample=-1, input_size=(320, 320)):
+        self.imgs, self.seg_masks= [], []
+        self.test_dir = test_dir
+        self.target_domain_names = target_domain_names
+        self.transform = transform
+        self.max_sample = max_sample
+        self.input_size = input_size
+        self._make_dataset()
+
+    def _make_dataset(self):
+        if self.test_dir is not None:
+            self.imgs = parse_input_folders([self.test_dir], max_sample=self.max_sample)     
+        logging.info('++ {} samples found in: {}'.format(len(self.imgs), self.test_dir))                    
+        return
+    def __getitem__(self, index):
+        img_path = self.imgs[index]
+        try:
+            img = Image.open(img_path).convert('RGB')
+        except UnidentifiedImageError:
+            img = Image.new('RGB', self.input_size)
+        # sample = Munch(img=img, fname=[self.imgs[index]])
+        sample = Munch(img=img)
+            
+        parent, name = str(img_path.parent), img_path.name        
+        sem_path = os.path.join(parent.replace('images', 'seg_masks'), name.replace('.jpg', '.png'))
+        if os.path.exists(sem_path):
+            try:
+                seg_masks = Image.open(sem_path).convert('L')
+            except UnidentifiedImageError:
+                seg_masks = Image.new('L', img.size)
+        else:
+            logging.error('++ No semantic labels found for: {}'.format(img_path))       
+            seg_masks  = Image.new('L', img.size)
+        sample.seg_masks = seg_masks
+        if self.transform is not None:
+            sample = self.transform(sample)
+        logging.info('++ TestDataset: {}'.format(sample))
+
+        return sample
+    
+    def __len__(self):
+        return len(self.imgs)    
 
 
 def _make_balanced_sampler(labels, target_domain_names=[]):
@@ -178,7 +227,7 @@ def _make_balanced_sampler(labels, target_domain_names=[]):
 
 
 def get_train_loader(img_size: (int, int)=(256, 256),
-                     batch_size: int=8, prob: float=0.5, num_workers: int=8, train_list: str=None, imagenet_normalize: bool=True, max_scale: float=2.0, max_n_bbox=4, target_domain_names=[]):
+                     batch_size: int=8, prob: float=0.5, num_workers: int=8, train_list: str=None, imagenet_normalize: bool=True, max_scale: float=2.0, max_n_bbox=4, target_domain_names=[], seg_threshold=0.8):
     logging.info('+ Preparing DataLoader to fetch training images '
           'during the training phase...')
 
@@ -204,9 +253,9 @@ def get_train_loader(img_size: (int, int)=(256, 256),
         ct.Normalize(mean=mean,
                 std=std),
         ct.SegMaskToBBoxes([1, 7, 14], n_bbox=max_n_bbox),
-        ct.SegMaskToPatches(8, 0.8)
+        ct.SegMaskToPatches(8, seg_threshold)
         ])
-    dataset = MultiDomainDataset(train_list, transform_custom, target_domain_names=target_domain_names)
+    dataset = MultiDomainDataset(train_list, transform_custom, target_domain_names=target_domain_names, input_size=img_size)
     return data.DataLoader(dataset=dataset,
                            batch_size=batch_size,
                            shuffle=True, # use shuffle or sample
@@ -236,7 +285,7 @@ def get_ref_loader(img_size: (int, int) = (256, 256),
 
     
 
-    dataset = ReferenceDataset(ref_list, transform, target_domain_names=target_domain_names, max_sample=max_dataset_size)
+    dataset = ReferenceDataset(ref_list, transform, target_domain_names=target_domain_names, max_sample=max_dataset_size, input_size=img_size)
 
     _domains = [torch.argmax(d) for d in dataset.ref_domains]
     
@@ -250,26 +299,28 @@ def get_ref_loader(img_size: (int, int) = (256, 256),
                            pin_memory=True,
                            drop_last=True)
 
-def get_eval_loader(root, img_size=256, batch_size=32,
+def get_test_loader(test_dir = '', img_size=256, batch_size=1,
                     imagenet_normalize=True, shuffle=True,
-                    num_workers=4, drop_last=False):
+                    num_workers=4, drop_last=False, max_n_bbox=-1, 
+                    seg_threshold=0.8, patch_size=8):
     logging.info('Preparing DataLoader for the evaluation phase...')
     if imagenet_normalize:
         mean = [0.485, 0.456, 0.406]
         std = [0.229, 0.224, 0.225]        
     else:
-        height, width = img_size, img_size
         mean = [0.5, 0.5, 0.5]
         std = [0.5, 0.5, 0.5]
 
-    transform = transforms.Compose([
-        transforms.Resize([img_size, img_size]),
-        transforms.Resize([height, width]),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=mean, std=std)
-    ])
+    transform_custom = transforms.Compose([
+        ct.RandomScale(img_size),
+        ct.RandomCrop(img_size),
+        ct.ToTensor(),        
+        ct.Normalize(mean=mean,
+                std=std),
+        ct.SegMaskToPatches(patch_size, seg_threshold)
+        ])
 
-    dataset = DefaultDataset(root, transform=transform)
+    dataset = TestDataset(test_dir=test_dir, transform=transform_custom, input_size=img_size)
     return data.DataLoader(dataset=dataset,
                            batch_size=batch_size,
                            shuffle=shuffle,
@@ -277,23 +328,6 @@ def get_eval_loader(root, img_size=256, batch_size=32,
                            pin_memory=True,
                            drop_last=drop_last)
 
-
-def get_test_loader(root, img_size=256, batch_size=32,
-                    shuffle=True, num_workers=4):
-    logging.info('Preparing DataLoader for the generation phase...')
-    transform = transforms.Compose([
-        transforms.Resize([img_size, img_size]),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.5, 0.5, 0.5],
-                             std=[0.5, 0.5, 0.5]),
-    ])
-
-    dataset = ImageFolder(root, transform)
-    return data.DataLoader(dataset=dataset,
-                           batch_size=batch_size,
-                           shuffle=shuffle,
-                           num_workers=num_workers,
-                           pin_memory=True)
 
 
 class InputProvider:
@@ -322,28 +356,19 @@ class InputProvider:
         # return
         sample = self._fetch_inputs()
         # ref = self._fetch_refs()        
-        if self.mode == 'train':
-            lat_trg = torch.randn(sample.img.size(0), self.latent_dim)
-            lat_trg_2 = torch.randn(sample.img.size(0), self.latent_dim)
-            inputs = Munch(img_src=sample.img, d_src=sample.domain, seg = sample.sem_labels, lat_trg=lat_trg, lat_trg_2=lat_trg_2, bbox=sample.bboxes)
-        elif self.mode == 'val':
-            lat_trg = torch.randn(sample.img.size(0), self.latent_dim)
-            inputs = Munch(img_src=sample.img, d_src=sample.domain, seg=sample.sem_labels, lat_trg=lat_trg)
-        elif self.mode == 'test':
-            lat_trg = torch.randn(sample.size(0), self.latent_dim)
-            inputs = Munch(img_src=sample.img, d_src=sample.domain, seg=sample.sem_labels, lat_trg=lat_trg)
-        else:
-            raise NotImplementedError
+        lat_trg = torch.randn(sample.img.size(0), self.latent_dim)
+        lat_trg_2 = torch.randn(sample.img.size(0), self.latent_dim)
+        inputs = Munch(img_src=sample.img, d_src=sample.domain, seg = sample.seg_masks, lat_trg=lat_trg, lat_trg_2=lat_trg_2, bbox=sample.bboxes)
+
         #TODO make sure not to move to GPU twice
         return Munch({k: v.to(self.device)
                       for k, v in inputs.items()})
     
 class RefProvider:
-    def __init__(self, loader_ref, mode=''):
+    def __init__(self, loader_ref):
         self.loader_ref = loader_ref
         self.iter_ref = iter(self.loader_ref)
         self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-        self.mode = mode
 
     def _fetch_refs(self, d_src=None):
         try:
@@ -358,14 +383,37 @@ class RefProvider:
 
     def __next__(self, d_src=None):
         ref = self._fetch_refs(d_src)
-        if self.mode == 'train':
-            inputs = Munch(img_ref = ref.img, d_trg=ref.domain)
-        elif self.mode == 'val':
-            inputs = Munch(img_ref=ref.img, d_trg=ref.domain)
-        elif self.mode == 'test':
-            inputs = Munch(d_trg=ref.domain)
-        else:
-            raise NotImplementedError
+        inputs = Munch(img_ref = ref.img, d_trg=ref.domain)
         #TODO make sure not to move to GPU twice
         return Munch({k: v.to(self.device)
+                      for k, v in inputs.items()})    
+    
+class TestProvider:
+    def __init__(self, loader_test, mode=''):
+        self.loader_test = loader_test
+        self.iter_ref = iter(self.loader_test)
+        self.device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+        self.mode = mode
+
+    def _fetch_samples(self, d_src=None):
+        try:
+            x = next(self.iter_ref, d_src)
+        except (AttributeError) as e:
+            self.iter_ref = iter(self.loader_test)
+            x = next(self.iter_ref, d_src)
+        if x == None:
+            self.iter_ref = iter(self.loader_test)
+            x = next(self.iter_ref, d_src)
+        return x
+
+    def __next__(self, d_src=None):
+        sample = self._fetch_samples(d_src)
+        if self.mode == 'val':
+            inputs = Munch(img=sample.img, seg=sample.seg_masks)
+        elif self.mode == 'test':
+            inputs = Munch(img=sample.img, seg=sample.seg_masks)
+        else:
+            raise NotImplementedError
+        logging.info('++ TestProvider: {}'.format(inputs))
+        return Munch({k: v.to(self.device) if k is not 'fname' else [v]
                       for k, v in inputs.items()})    
