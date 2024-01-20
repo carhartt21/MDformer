@@ -1,6 +1,7 @@
 import os
 from packaging import version
 from PIL import Image
+import torchvision.utils as vutils
 
 from argparse import Namespace
 import cv2
@@ -14,11 +15,45 @@ from copy import deepcopy
 import json
 import random
 import torch.nn.functional as F
-
-
+from einops import repeat, rearrange
 
 
 ##################################### Visualize ##################################### 
+def denormalize(x, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
+    # 3, H, W, B
+    ten = x.clone().permute(1, 2, 3, 0)
+    for t, m, s in zip(ten, mean, std):
+        t.mul_(s).add_(m)
+    # B, 3, H, W
+    return torch.clamp(ten, 0, 1).permute(3, 0, 1, 2)
+
+@torch.no_grad()
+def translate_using_latent(model_G, cfg, input, d_trg, psi, filename, latent_dim=64, feat_layers=[]):
+    N, C, H, W = input.img.size()
+    # latent_dim = z_trg_list[0].size(1)
+    x_concat = [input.img]
+    z_trg = torch.randn(cfg.TEST.num_images_per_domain, 1, cfg.MODEL.latent_dim).repeat(1, N, 1).to(input.img.device)
+
+    z_many = torch.randn(10000, latent_dim).to(input.img.device)
+    y_many = repeat(d_trg, 'b -> n b', n=10000).to(input.img.device)
+    # y_many = torch.LongTensor(10000).to(input.img.device).fill_(d_trg)
+    s_many = model_G.MappingNetwork(z_many, y_many)
+    s_avg = torch.mean(s_many, dim=0, keepdim=True)
+    s_avg = s_avg.repeat(N, 1)
+    d_trg = rearrange(d_trg, 'b -> 1 b')
+    s_trg = model_G.MappingNetwork(z_trg, d_trg)
+    s_trg = torch.lerp(s_avg, s_trg, 0.0)
+    assign_adain_params(model_G.MLP_Adain(s_trg), model_G.Transformer.transformer.layers)
+    feat_content, features = model_G.ContentEncoder(input.img, feat_layers)    
+    aggregated_feat, _, _ = model_G.Transformer(feat_content, sem_embed=True, sem_labels=input.seg, n_bbox=-1)
+     
+    x_fake = model_G.Generator(aggregated_feat)    
+    # x_concat += [x_fake]
+
+    # x_concat = torch.cat(x_concat, dim=0)
+    save_image_from_tensor(x_fake, N, filename)
+
+
 def batch_to_onehot(matrix):
     """
     Translate every row of a matrix to a one-hot vector.
@@ -346,7 +381,7 @@ def assign_adain_params(adain_params, model):
 def get_num_adain_params(model):
     # return the number of AdaIN parameters needed by the model
     num_adain_params = 0
-    for m in model.module.modules():
+    for m in model.modules():
         if m.__class__.__name__ == "AdaptiveInstanceNorm2d":
             num_adain_params += 2*m.num_features
     return num_adain_params            
@@ -395,6 +430,10 @@ def tensor2im(input_image, imtype=np.uint8):
         return img
     except RuntimeError:
         return np.ones_like(image_numpy.transpose([2, 0, 1])) * 255
+
+def save_image_from_tensor(x, ncol, filename):
+    x = denormalize(x)
+    vutils.save_image(x.cpu(), filename, nrow=ncol, padding=0)
 
 def save_image(image_numpy, image_path, aspect_ratio=1.0):
     """Save a numpy image to the disk
@@ -679,3 +718,4 @@ class SemNCELoss(nn.Module):
                                                             device=feat_q.device))
 
         return (loss/batchSize).mean()
+    
