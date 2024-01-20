@@ -254,15 +254,15 @@ if __name__ == "__main__":
             if (total_iters % cfg.TRAIN.print_losses_iter) == 0:
                 visualizer.print_current_losses(epoch + 1, i, losses, time.time() - iter_date_time,
                                                 optimize_start_time - iter_date_time)
+            if (cfg.VISDOM.save_intermediate and total_iters % cfg.save_epoch_freq) == 0:
+                utils.save_image_from_tensor(inputs.img_src, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}_source_image_ep_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(epoch)))
+                utils.save_image_from_tensor(fake_img, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}_fake_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(epoch)))
+                utils.save_image_from_tensor(recon_img.img_src, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}_recon_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(epoch)))
+                if cfg.TRAIN.w_StyleDiv > 0.0:
+                    utils.save_image_from_tensor(fake_img_2, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}_fake2_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(epoch)))                                                
             # Save model & optimizer and example images
         if epoch > 0 and (epoch % cfg.TRAIN.save_epoch) == 0:
             utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_G, optimizer_G)
             utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_D, optimizer_D)
             if (cfg.TRAIN.w_NCE > 0.0) or (cfg.TRAIN.w_Instance_NCE):
                 utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_F, optimizer_F)
-
-            utils.save_image_from_tensor(inputs.img_src, '{}/{}_source_image'.format(cfg.TRAIN.log_path, cfg.MODEL.name), str(epoch))
-            utils.save_image_from_tensor(fake_img, '{}/{}_fake_1'.format(cfg.TRAIN.log_path, cfg.MODEL.name), str(epoch))
-            if cfg.TRAIN.w_StyleDiv > 0.0:
-                utils.save_image_from_tensor(fake_img_2, '{}/{}_fake_2'.format(cfg.TRAIN.log_path, cfg.MODEL.name), str(epoch))
-            utils.save_image_from_tensor(recon_img, '{}/{}_recon'.format(cfg.TRAIN.log_path, cfg.MODEL.name), str(epoch))
