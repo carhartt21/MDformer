@@ -40,7 +40,7 @@ def set_seed(seed=42):
     logging.info("+ Seed set to: {}".format(seed))
     return
 
-def build_model(cfg, device, distributed=False, num_domains=8):
+def build_model(cfg, device, distributed=False, num_domains=8, mode='train'):
     """
     Build the model for training.
 
@@ -70,16 +70,16 @@ def build_model(cfg, device, distributed=False, num_domains=8):
 
     # domain_idxs = utils.get_domain_indexes(model_cfg.DATASET.target_domain_names)
     # logging.info("domain_idxs : {}".format(domain_idxs))
-
+    # TODO: add test mode
     logging.info("++ Building the ContentEncoder")
-    model_G.ContentEncoder = DataParallel(networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling))
+    model_G.ContentEncoder = networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling)
     logging.info("++ Building the StyleEncoder")
-    model_G.StyleEncoder = DataParallel(networks.StyleEncoder(input_channels=model_cfg.in_channels, 
+    model_G.StyleEncoder = networks.StyleEncoder(input_channels=model_cfg.in_channels, 
                                                         n_generator_filters=model_cfg.n_generator_filters, 
                                                         style_dim=model_cfg.style_dim, 
-                                                        num_domains=num_domains))
+                                                        num_domains=num_domains)
     logging.info("++ Building the Transformer")
-    model_G.Transformer = DataParallel(networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
+    model_G.Transformer = networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
                                                                  patch_size=model_cfg.patch_size, 
                                                                  patch_embed_C=model_cfg.TRANSFORMER.embed_C, 
                                                                  sem_embed_C=model_cfg.sem_embed_dim,
@@ -87,68 +87,71 @@ def build_model(cfg, device, distributed=False, num_domains=8):
                                                                  depth=model_cfg.TRANSFORMER.depth, 
                                                                  heads=model_cfg.TRANSFORMER.heads, 
                                                                  mlp_dim=model_cfg.TRANSFORMER.mlp_dim,
-                                                                 vis = False))
+                                                                 vis = False)
     logging.info("++ Building the DomainClassifier")
-    model_G.DomainClassifier = DataParallel(networks.TransformerClassifier(input_dim=model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim, num_classes=num_domains))
+    model_G.DomainClassifier = networks.TransformerClassifier(input_dim=model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim, num_classes=num_domains)
     logging.info("++ Building the Generator")
-    model_G.Generator = DataParallel(networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
+    model_G.Generator = networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
                                                   patch_size=model_cfg.patch_size, 
                                                   embed_C=model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim, 
                                                   feat_C=model_cfg.TRANSFORMER.feat_C, 
                                                   n_generator_filters=model_cfg.n_generator_filters,
-                                                  n_downsampling=model_cfg.n_downsampling))
+                                                  n_downsampling=model_cfg.n_downsampling)
     logging.info("++ Building the MLP Block") 
-    model_G.MLP_Adain = DataParallel(networks.MLP(input_dim=model_cfg.style_dim, output_dim=2*(model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim)))
+    model_G.MLP_Adain = networks.MLP(input_dim=model_cfg.style_dim, output_dim=2*(model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim))
 
     logging.info("++ Building the Mapping Network")
-    model_G.MappingNetwork = DataParallel(networks.MappingNetwork(num_domains=num_domains, 
+    model_G.MappingNetwork = networks.MappingNetwork(num_domains=num_domains, 
                                                             latent_dim=model_cfg.latent_dim,
-                                                            style_dim=model_cfg.style_dim))
+                                                            style_dim=model_cfg.style_dim)
+    
+    if mode == 'test':
+        return model_G
 
     logging.info("++ Building the Discriminator")
-    model_D.Discrim = DataParallel(networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3, num_domains=num_domains))
+    model_D.Discrim = networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3, num_domains=num_domains)
     logging.info("++ Building the MLP Heads for Loss Calculation")
     if (cfg.TRAIN.w_NCE>0.0):
-        model_F.MLP_head = DataParallel(networks.MLP_Head())
+        model_F.MLP_head = networks.MLP_Head()
     if (cfg.TRAIN.w_Instance_NCE>0.0):
-        model_F.MLP_head_inst = DataParallel(networks.MLP_Head())
+        model_F.MLP_head_inst = networks.MLP_Head()
 
-    if distributed:
-        model_G.ContentEncoder = DDP(networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling))
+    # if distributed:
+    #     model_G.ContentEncoder = DDP(networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling)
         
-        model_G.StyleEncoder = DDP(networks.StyleEncoder(input_channels=model_cfg.in_channels, 
-                                                        n_generator_filters=model_cfg.n_generator_filters, 
-                                                        style_dim=model_cfg.style_dim, 
-                                                        num_domains= num_domains))
+    #     model_G.StyleEncoder = DDP(networks.StyleEncoder(input_channels=model_cfg.in_channels, 
+    #                                                     n_generator_filters=model_cfg.n_generator_filters, 
+    #                                                     style_dim=model_cfg.style_dim, 
+    #                                                     num_domains= num_domains))
         
-        model_G.Transformer = DDP(networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
-                                                                patch_size=model_cfg.patch_size, 
-                                                                embed_C=model_cfg.TRANSFORMER.embed_C, 
-                                                                feat_C=model_cfg.n_generator_filters*2**(model_cfg.n_downsampling), 
-                                                                depth=model_cfg.TRANSFORMER.depth, 
-                                                                heads=model_cfg.TRANSFORMER.heads, 
-                                                                mlp_dim=model_cfg.TRANSFORMER.mlp_dim))
-        model_G.MLP_Adain = DDP(networks.MLP(input_dim=model_cfg.style_dim, output_dim=2048))
+    #     model_G.Transformer = DDP(networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
+    #                                                             patch_size=model_cfg.patch_size, 
+    #                                                             embed_C=model_cfg.TRANSFORMER.embed_C, 
+    #                                                             feat_C=model_cfg.n_generator_filters*2**(model_cfg.n_downsampling), 
+    #                                                             depth=model_cfg.TRANSFORMER.depth, 
+    #                                                             heads=model_cfg.TRANSFORMER.heads, 
+    #                                                             mlp_dim=model_cfg.TRANSFORMER.mlp_dim))
+    #     model_G.MLP_Adain = DDP(networks.MLP(input_dim=model_cfg.style_dim, output_dim=2048))
 
-        model_G.DomainClassifier = DDP(networks.TransformerClassifier(input_dim=model_cfg.TRANSFORMER.embed_C, num_classes=num_domains))
+    #     model_G.DomainClassifier = DDP(networks.TransformerClassifier(input_dim=model_cfg.TRANSFORMER.embed_C, num_classes=num_domains))
 
-        model_G.Generator = DDP(networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
-                                                patch_size=model_cfg.patch_size, 
-                                                embed_C=model_cfg.TRANSFORMER.embed_C, 
-                                                feat_C=model_cfg.TRANSFORMER.feat_C, 
-                                                n_generator_filters=model_cfg.n_generator_filters,
-                                                n_downsampling=model_cfg.n_downsampling,
-                                                ))
+    #     model_G.Generator = DDP(networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
+    #                                             patch_size=model_cfg.patch_size, 
+    #                                             embed_C=model_cfg.TRANSFORMER.embed_C, 
+    #                                             feat_C=model_cfg.TRANSFORMER.feat_C, 
+    #                                             n_generator_filters=model_cfg.n_generator_filters,
+    #                                             n_downsampling=model_cfg.n_downsampling,
+    #                                             ))
         
-        model_G.MappingNetwork = DDP(networks.MappingNetwork(num_domains=num_domains, 
-                                                                latent_dim=model_cfg.latent_dim,
-                                                                style_dim=model_cfg.style_dim))
+    #     model_G.MappingNetwork = DDP(networks.MappingNetwork(num_domains=num_domains, 
+    #                                                             latent_dim=model_cfg.latent_dim,
+    #                                                             style_dim=model_cfg.style_dim))
         
 
-        model_D.Discrim = DDP(networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3, num_domains=num_domains))
+    #     model_D.Discrim = DDP(networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3, num_domains=num_domains))
 
-        model_F.MLP_head = DDP(networks.MLP_Head())
-        model_F.MLP_head_inst = DDP(networks.MLP_Head())
+    #     model_F.MLP_head = DDP(networks.MLP_Head())
+    #     model_F.MLP_head_inst = DDP(networks.MLP_Head())
 
     if model_cfg.load_weight:
         logging.info("+ Loading Network weights")
