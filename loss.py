@@ -148,7 +148,7 @@ def compute_G_loss(inputs: Dict,
     if cfg.TRAIN.w_GAN > 0.0:
         G_losses.GAN_loss = cfg.TRAIN.w_GAN * compute_GAN_loss(fake_img, utils.batch_to_onehot(refs.d_trg), model_D.Discrim, criterions.GAN)
     
-    if cfg.TRAIN.w_StyleDiv > 0.0:
+    if cfg.TRAIN.w_Recon > 0.0:
         G_losses.style_loss = cfg.TRAIN.w_StyleDiv * compute_style_recon_loss(d_fake_img_pred, refs.d_trg, criterions.DClass)
     
     if cfg.TRAIN.w_NCE > 0.0 or (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0):
