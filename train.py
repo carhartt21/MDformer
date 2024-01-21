@@ -255,11 +255,11 @@ if __name__ == "__main__":
                 visualizer.print_current_losses(epoch + 1, i, losses, time.time() - iter_date_time,
                                                 optimize_start_time - iter_date_time)
             if (cfg.VISDOM.save_intermediate and total_iters % cfg.VISDOM.save_epoch_freq) == 0:
-                utils.save_image_from_tensor(inputs.img_src, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}_source_image_ep_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(epoch)))
-                utils.save_image_from_tensor(fake_img, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}_fake_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(epoch)))
-                utils.save_image_from_tensor(recon_img.img_src, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}_recon_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(epoch)))
+                utils.save_image_from_tensor(inputs.img_src, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}/source_image_ep_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)))
+                utils.save_image_from_tensor(fake_img, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}/fake_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)))
+                utils.save_image_from_tensor(recon_img, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}/recon_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)))
                 if cfg.TRAIN.w_StyleDiv > 0.0:
-                    utils.save_image_from_tensor(fake_img_2, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}_fake2_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(epoch)))                                                
+                    utils.save_image_from_tensor(fake_img_2, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}/fake2_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)))                                                
             # Save model & optimizer and example images
         if epoch > 0 and (epoch % cfg.TRAIN.save_epoch) == 0:
             utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_G, optimizer_G)

@@ -432,8 +432,9 @@ def tensor2im(input_image, imtype=np.uint8):
         return np.ones_like(image_numpy.transpose([2, 0, 1])) * 255
 
 def save_image_from_tensor(x, ncol, filename):
-    x = denormalize(x)
-    vutils.save_image(x.cpu(), filename, nrow=ncol, padding=0)
+    _x = x.clone().detach()
+    _x = denormalize(_x)
+    vutils.save_image(_x.cpu(), filename, padding=0)
 
 def save_image(image_numpy, image_path, aspect_ratio=1.0):
     """Save a numpy image to the disk
