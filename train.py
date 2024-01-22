@@ -60,8 +60,12 @@ if __name__ == "__main__":
     cfg.merge_from_file(args.cfg)
     cfg.merge_from_list(args.opts)
 
-    logger.info('+ Loaded configuration file {}'.format(args.cfg))
-
+    logger.info('+ Loaded configuration {}'.format(args.cfg))
+    logger.info('++++++++++++++++++++++++++++++++++')
+    logger.info(yaml.dump(cfg))
+    # for k, v in cfg.items():
+    #     logger.info('++ {} : {}'.format(k, v))
+    logger.info('++++++++++++++++++++++++++++++++++')
     log_path_model = os.path.join(cfg.TRAIN.log_path, cfg.MODEL.name)
     if not os.path.isdir(log_path_model):
         os.makedirs(log_path_model)
