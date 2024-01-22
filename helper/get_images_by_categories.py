@@ -8,16 +8,20 @@ import shutil
 import argparse
 from tqdm import tqdm
 import multiprocessing as mp
-import pandas as pd
+# import pandas as pd
 import numpy as np
+import clip
+from PIL import Image
+import torch
 
-file = '/home/chge7185/repositories/weather_dataset/skyfinder_complete_table.csv'
+# file = '/home/chge7185/repositories/weather_dataset/skyfinder_complete_table.csv'
 # file = '/home/chge7185/repositories/weather_dataset/all_attributes.csv'
-source_path = '/media/chge7185/HDD1/datasets/skyfinder/webcam-labeler'
+# source_path = '/media/chge7185/HDD1/datasets/skyfinder/webcam-labeler'
 
-tae_attributes = np.loadtxt('/media/chge7185/HDD1/datasets/transient_attributes/annotations/attributes.txt', dtype=str)
+# tae_attributes = np.loadtxt('/media/chge7185/HDD1/datasets/transient_attributes/annotations/attributes.txt', dtype=str)
 # target_attributes = ['daylight', 'night', 'sunrisesunset', 'dawndusk', 'spring', 'summer', 'autumn', 'winter', 'sunny', 'fog', 'clouds', ['storm', 'snow', 'ice', 'cold'], ['sunny', 'dry', 'warm']]
-target_attributes = ['daylight', 'sunrisesunset', 'dawndusk', 'night', 'spring', 'summer', 'autumn', 'winter', 'sunny', 'snow', 'rain', 'fog']
+# target_attributes = ['daylight', 'sunrisesunset', 'dawndusk', 'night', 'spring', 'summer', 'autumn', 'winter', 'sunny', 'snow', 'rain', 'fog']
+target_attributes = ['summer', 'autumn', 'winter', 'spring']
 
 threshold = 0.5
 
@@ -82,6 +86,40 @@ def sort_images_by_label(input_path):
         shutil.copy(input_path, out_att_path)
     return
 
+def sort_images_using_clip(input_path, model, text, preprocess, device):
+    image = preprocess(Image.open(input_path)).unsqueeze(0).to(device)
+
+    with torch.no_grad():
+        image_features = model.encode_image(image)
+        text_features = model.encode_text(text)
+        
+        logits_per_image, logits_per_text = model(image, text)
+        probs = logits_per_image.softmax(dim=-1).cpu().numpy()     
+    # print("Label probs:", probs)  # prints: [[0.9927937  0.00421068 0.00299572]] 
+    # print((probs > threshold).nonzero()[1])        
+    attributes = (probs > threshold).nonzero()[1]
+    # attributes = torch.where(probs.squeeze() > threshold).cpu().numpy()
+    for idx in attributes:
+        input_path = Path(input_path)
+        # _path = input_path.replace('attributes', 'images')
+        _, _name = str(input_path.parent), input_path.name           
+        
+        out_dir_imgs = '{}/images/{}'.format(args.output, target_attributes[idx])
+        # out_dir_atts = '{}/domain_labels/{}'.format(args.output, target_attributes[idx])
+        out_img_path = '{}/{}'.format(out_dir_imgs, _name)
+        # out_att_path = '{}/{}'.format(out_dir_atts, _name)
+
+        # out_dir = '{}/{}{}/'.format(args.output, target_attributes[idx], str(image_path).split('images')[-1])
+        # out_img_path = '{}{}'.format(out_dir, image_name)
+        
+        if not path.isdir(out_dir_imgs):
+            try:
+                makedirs(out_dir_imgs, exist_ok=True)
+            except FileExistsError as e:
+                print(str(e), out_dir_imgs)
+        shutil.copy(input_path, out_img_path)
+    return
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description="Sorts images by attributes from a numpy array"
@@ -123,20 +161,32 @@ if __name__ == '__main__':
         for attribute in target_attributes:
             if not path.isdir('{}/{}'.format(args.output, attribute)):
                 mkdir('{}/{}'.format(args.output, attribute))
+
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model, preprocess = clip.load("ViT-B/32", device=device)
+
+    # classes = ["autumn", "summer", "winter", "spring"]
+    text = clip.tokenize(target_attributes).to(device)
+    # text = torch.cat([clip.tokenize(f"a {c} scene") for c in classes]).to(device)
+
+    # text = clip.tokenize(["autumn", "summer", "winter", "spring"]).to(device)
+          
     
     # Generate file list
     if path.isdir(args.input):
         print(args.input)
-        files = find_recursive(args.input, ext='.npy')
+        files = find_recursive(args.input, ext='.png')
         assert len(files), "Exception: files should be a path to image csv file or directory."
         print('Found {} files'.format(len(files)))
         # sort_images_by_label(files[223])
-        pool = mp.Pool(args.nproc)
-        for _ in tqdm(pool.imap_unordered(sort_images_by_label, [(_file) for _file in files], chunksize=args.chunk),
-                      total=len(files), desc='Sorting images by label', ascii=True):
-            pass
-        ## Close pool
-        pool.close()
+        for _file in tqdm(files, desc='Sorting images by label', ascii=True):
+            sort_images_using_clip(_file, model, text, preprocess, device)
+        # pool = mp.Pool(args.nproc)
+        # for _ in tqdm(pool.imap_unordered(sort_images_by_label, [(_file) for _file in files], chunksize=args.chunk),
+        #               total=len(files), desc='Sorting images by label', ascii=True):
+        #     pass
+        # ## Close pool
+        # pool.close()
     else:
         print('Input is not a directory!')
 
