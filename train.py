@@ -20,7 +20,7 @@ from visualizer import Visualizer
 from data import create_dataset
 from util.config import cfg
 from munch import Munch
-from data_loader import MultiDomainDataset, InputProvider, RefProvider, get_train_loader, get_ref_loader
+from data_loader import MultiDomainDataset, TrainProvider, RefProvider, get_train_loader, get_ref_loader
 
 # TRAIN = 1
 # EVAL = 0
@@ -115,7 +115,7 @@ if __name__ == "__main__":
         max_dataset_size=cfg.DATASET.max_dataset_size
     )
 
-    input_provider = InputProvider(loader=data_loader, latent_dim=cfg.MODEL.latent_dim, num_domains=cfg.DATASET.num_domains)
+    input_provider = TrainProvider(loader=data_loader, latent_dim=cfg.MODEL.latent_dim, num_domains=cfg.DATASET.num_domains)
     ref_provider = RefProvider(loader_ref=ref_loader)
 
     # model_load
@@ -147,7 +147,7 @@ if __name__ == "__main__":
 
     visualizer = Visualizer(cfg.MODEL.name, cfg.TRAIN.log_path, cfg.VISDOM, cfg.DATASET.target_domain_names)
 
-    # input_provider_val = InputProvider(data_loader.val, None, args.latent_dim, 'val')
+    # input_provider_val = TrainProvider(data_loader.val, None, args.latent_dim, 'val')
     # inputs_val = next(input_provider_val)
 
     logger.info('+ Start Training')

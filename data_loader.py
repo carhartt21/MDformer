@@ -325,7 +325,7 @@ def get_test_loader(test_dir = '', img_size=256, batch_size=1,
 
 
 
-class InputProvider:
+class TrainProvider:
     def __init__(self, loader, latent_dim=16, mode='', num_domains=12):
         self.loader = loader
         self.iter = iter(self.loader)
