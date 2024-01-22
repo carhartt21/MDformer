@@ -82,23 +82,17 @@ class MultiDomainDataset(data.Dataset):
         self._make_dataset()
 
     def _make_dataset(self):
-        if self.train_list is not None:
-            self.imgs = parse_input_folders(self.train_list, max_sample=self.max_sample)     
-            for img_path in self.imgs:       
-            # input from folders listed in text file
-                parent, name = str(img_path.parent), img_path.name
-                domain_path = os.path.join(parent.replace('images', 'domain_labels'), 
-                    name.replace('.jpg', '.npy')).replace('.png', '.npy')
-                if os.path.exists(domain_path): 
-                    domain = np.load(domain_path)
-                    assert(domain.size > 1)
-                    idxs, _ = get_domain_indexes(self.target_domain_names)
-                    self.domains.append(domain[idxs])
-                else: 
-                    self.domains.append(np.zeros(len(self.target_domain_names)) 
-           )
-        logging.info('++ {} samples found in: {}'.format(len(self.imgs), self.train_list))                    
-        return
+        for domain_folder_path in self.train_list:
+            # convert domain to one-hot vector for all samples in the folder
+            _samples = parse_input_folders([domain_folder_path], max_sample=self.max_sample)
+            domain_name = domain_folder_path.split('/')[-1]
+            self.domains += [domain_to_onehot(domain_name, self.target_domain_names)] * len(_samples)
+            logging.info('++ {} samples found in: {}'.format(len(_samples), domain_name))
+            self.imgs += _samples
+        assert self.imgs != [], '+ No training images found'     
+        logging.info('+++ Total: {} training samples found'.format(len(self.imgs)))    
+        return self.imgs, self.domains         
+             
     def __getitem__(self, index):
         img_path = self.imgs[index]
         domain = self.domains[index]
@@ -107,8 +101,9 @@ class MultiDomainDataset(data.Dataset):
         except UnidentifiedImageError:
             img = Image.new('RGB', self.input_size)
         sample = Munch(img=img, domain=domain)
-        parent, name = str(img_path.parent), img_path.name        
-        seg_path = os.path.join(parent.replace('images', 'seg_masks'), name.replace('.jpg', '.png'))
+        parent, name = img_path.parent, img_path.name
+        _dir, _domain = os.path.split(parent)
+        seg_path = os.path.join(str(_dir).replace('images', 'seg_masks'), name.replace('.jpg', '.png'))
         if os.path.exists(seg_path):
             try:
                 seg_masks = Image.open(seg_path).convert('L')
@@ -120,11 +115,11 @@ class MultiDomainDataset(data.Dataset):
         sample.seg_masks = seg_masks
         if self.transform is not None:
             sample = self.transform(sample)
-        sample.domain = torch.tensor(sample.domain)
+        # sample.domain = torch.tensor(sample.domain)
         return sample
     
     def __len__(self):
-        return len(self.domains)
+        return len(self.imgs)
 
 class ReferenceDataset(data.Dataset):
     def __init__(self, ref_list, transform=None, target_domain_names=[], max_sample=-1, input_size=(320, 320)):
@@ -146,7 +141,7 @@ class ReferenceDataset(data.Dataset):
             logging.info('++ {} samples found in: {}'.format(len(_ref_samples), domain_name))
             self.ref_samples += _ref_samples
         assert self.ref_samples != [], '+ No reference images found'     
-        logging.info('+++ Total: {} samples found in'.format(len(self.ref_samples)))    
+        logging.info('+++ Total: {} reference samples found'.format(len(self.ref_samples)))    
         return self.ref_samples, self.ref_domains
 
     def __getitem__(self, index, d_src=None):
@@ -219,7 +214,7 @@ class TestDataset(data.Dataset):
 
 
 def _make_balanced_sampler(labels, target_domain_names=[]):
-    logging.info('+ Creating balanced sampler for reference dataset...')
+    logging.info('+ Creating balanced sampler dataset...')
     class_counts = torch.bincount(labels)
     class_weights = 1. / class_counts
     weights = class_weights[labels]
