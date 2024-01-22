@@ -17,9 +17,9 @@ _C.DATASET.mode = 'multi'
 # path to images (should have subfolders images, seg_labels, domain_labels)
 _C.DATASET.root_dataset = './data/'
 # txt file containing training image folder
-_C.DATASET.train_list = './config/train_list.txt'
+_C.DATASET.train_dir = './data/train_images'
 # path to the reference images
-_C.DATASET.ref_path = './data/ref_images/'
+_C.DATASET.ref_dir = './data/ref_images/'
 # List of target domains
 _C.DATASET.target_domain_names = ['summer', 'winter', 'spring', 'autumn']
 # number of semantic classes 

@@ -119,9 +119,8 @@ def compute_G_loss(inputs: Dict,
                    model_D: Dict, 
                    model_F: Dict, 
                    criterions: Dict, 
-                   cfg: object, 
-                   d_src_pred: Optional[torch.Tensor] = None,
-                   d_fake_img_pred: Optional[torch.Tensor] = None) -> Tuple[float, Dict]:
+                   s_trg: torch.Tensor,
+                   cfg: object) -> Tuple[float, Dict]:
     """
     Calculate loss for the generator.
 
@@ -149,7 +148,8 @@ def compute_G_loss(inputs: Dict,
         G_losses.GAN_loss = cfg.TRAIN.w_GAN * compute_GAN_loss(fake_img, utils.batch_to_onehot(refs.d_trg), model_D.Discrim, criterions.GAN)
     
     if cfg.TRAIN.w_Recon > 0.0:
-        G_losses.style_loss = cfg.TRAIN.w_StyleDiv * compute_style_recon_loss(d_fake_img_pred, refs.d_trg, criterions.DClass)
+        s_fake = model_G.StyleEncoder(fake_img, torch.argmax(refs.d_trg, dim=1))
+        G_losses.style_loss = cfg.TRAIN.w_Recon * compute_style_recon_loss(s_fake, s_trg, criterions.Idt)
     
     if cfg.TRAIN.w_NCE > 0.0 or (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0):
         fake_feat_content, fake_features = model_G.ContentEncoder(fake_img, cfg.MODEL.feat_layers)
@@ -172,11 +172,11 @@ def compute_G_loss(inputs: Dict,
     if cfg.TRAIN.w_Cycle > 0.0:
         G_losses.cycle_loss = cfg.TRAIN.w_Cycle * compute_cycle_loss(inputs.img_src, recon_img, criterions.Cycle)
 
-    if cfg.TRAIN.w_DClass > 0.0:
-        if d_src_pred is not None and torch.max(inputs.d_src) > 0.0:
-            G_losses.class_loss = cfg.TRAIN.w_DClass * compute_domain_classification_loss(inputs.d_src, d_src_pred, criterions.DClass)
-        else: 
-            G_losses.class_loss = torch.tensor(0.0).to(inputs.img_src.device)
+    # if cfg.TRAIN.w_DClass > 0.0:
+    #     if d_src_pred is not None and torch.max(inputs.d_src) > 0.0:
+    #         G_losses.class_loss = cfg.TRAIN.w_DClass * compute_domain_classification_loss(refs.d_trg, d_src_pred, criterions.DClass)
+    #     else: 
+    #         G_losses.class_loss = torch.tensor(0.0).to(inputs.img_src.device)
             
     for key, loss in G_losses.items():
         if (key == 'style_div_loss'):
@@ -307,7 +307,9 @@ def compute_domain_classification_loss(d_src, d_src_pred, criterion):
     max, trg_idx = d_src.max(dim=1)
     # replace empty source domain with ignore index
     trg_idx[max==0] = -1
+    # logging.info('src_pred: {} trg_idx: {}'.format(d_src_pred, trg_idx))
     test = criterion(d_src_pred, trg_idx)
+    # logging.info('Domain Classification Loss: {}'.format(test))
     # logging.info(f"trg_idx: {trg_idx} d_src_pred: {d_src_pred}")
     # logging.info(f"Domain Classification Loss: {test} {test.shape} {test.dtype}")
     return test

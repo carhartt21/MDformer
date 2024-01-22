@@ -76,23 +76,36 @@ if __name__ == "__main__":
     # data loader
     num_domains = len(cfg.DATASET.target_domain_names)
 
+     # create a dataset given opt.dataset_mode and other options
+
+    train_list = []
+    for td in cfg.DATASET.target_domain_names:
+        if os.path.isdir(os.path.join(cfg.DATASET.train_dir, td)):
+            train_list.append(os.path.join(cfg.DATASET.train_dir, td))
+        else:
+            logger.warning("{} is not a directory".format(os.path.join(cfg.DATASET.train_dir, td)))
+    assert len(train_list) > 0, "Target domains {} not found in train directory {}".format(cfg.DATASET.target_domain_names,
+                                                                                        cfg.DATASET.train_dir)
+    if len(train_list) < num_domains:
+        logger.warning("Number of matching folders in the directory {} is less than number of domains {}.".format(len(train_list), num_domains))
+
     data_loader = get_train_loader(
         img_size=cfg.MODEL.img_size,
         batch_size=cfg.TRAIN.batch_size_per_gpu,
-        train_list=cfg.DATASET.train_list,
+        train_list=train_list,
         target_domain_names=cfg.DATASET.target_domain_names
-    )  # create a dataset given opt.dataset_mode and other options
+    )
 
     ref_list = []
     for td in cfg.DATASET.target_domain_names:
-        if os.path.isdir(os.path.join(cfg.DATASET.ref_path, td)):
-            ref_list.append(os.path.join(cfg.DATASET.ref_path, td))
+        if os.path.isdir(os.path.join(cfg.DATASET.ref_dir, td)):
+            ref_list.append(os.path.join(cfg.DATASET.ref_dir, td))
         else:
-            logger.warning("{} is not a directory".format(os.path.join(cfg.DATASET.ref_path, td)))
-    assert len(ref_list) > 0, "Target domains {} not found in reference path {}".format(cfg.DATASET.target_domain_names,
-                                                                                        cfg.DATASET.ref_path)
+            logger.warning("{} is not a directory".format(os.path.join(cfg.DATASET.ref_dir, td)))
+    assert len(ref_list) > 0, "Target domains {} not found in reference directory {}".format(cfg.DATASET.target_domain_names,
+                                                                                        cfg.DATASET.ref_dir)
     if len(ref_list) < num_domains:
-        logger.warning("Number of matching folders in the reference path {} is less than number of domains {}.".format(len(ref_list), num_domains))
+        logger.warning("Number of matching folders in the directory {} is less than number of domains {}.".format(len(ref_list), num_domains))
 
     ref_loader = get_ref_loader(
         img_size=cfg.MODEL.img_size,
@@ -179,6 +192,7 @@ if __name__ == "__main__":
             recon_img, style_code, d_fake_pred = loss.model_forward_reconstruction(inputs=inputs, fake_img=fake_img,
                                                                       model=model_G, d_src_pred=d_src_pred,
                                                                       feat_layers=cfg.MODEL.feat_layers)
+            # recon_img = torch.zeros(fake_img.shape).to(device)
             if cfg.DATASET.n_bbox > 0 and len(features) > len(cfg.MODEL.feat_layers):
                 features, box_feature = features[:-1], features[-1]
 
@@ -220,7 +234,7 @@ if __name__ == "__main__":
             total_G_loss, G_losses = loss.compute_G_loss(inputs=inputs,
                                                          refs=refs,
                                                          fake_imgs=fake_imgs,
-                                                         d_src_pred=d_src_pred,
+                                                         s_trg=style_code,
                                                          recon_img=recon_img,
                                                          features=features,
                                                          box_feature=box_feature,
@@ -228,7 +242,6 @@ if __name__ == "__main__":
                                                          model_D=model_D,
                                                          model_F=model_F,
                                                          criterions=criterions,
-                                                         d_fake_img_pred=d_fake_pred,
                                                          cfg=cfg)
             total_G_loss.backward()
             optimizer_G.step()

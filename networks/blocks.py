@@ -122,7 +122,7 @@ class HighPass(nn.Module):
         return F.conv2d(x, filter, padding=1, groups=x.size(1))
 
 class TransformerClassifier(nn.Module):
-    def __init__(self, input_dim, num_classes, pool=False):
+    def __init__(self, input_dim, num_classes, pool=True):
         super(TransformerClassifier, self).__init__()
         self.pool = pool
         self.to_latent = nn.Identity()
