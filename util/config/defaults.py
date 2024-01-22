@@ -127,7 +127,7 @@ _C.TRAIN.lr_encoder = 2e-4
 _C.TRAIN.lr_generator = 2e-4
 _C.TRAIN.lr_discriminator = 2e-4
 _C.TRAIN.lr_scheduler = True
-_C.TRAIN.lr_mappingnetwork = 2e-4
+_C.TRAIN.lr_mappingnetwork = 4e-4
 _C.TRAIN.lr_MLP = 2e-4
 # learning rate scheduler step size
 _C.TRAIN.scheduler_step_size = 100
