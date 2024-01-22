@@ -145,7 +145,7 @@ class ToTensor:
             The transformed sample.
         """
         sample.img = transforms.functional.to_tensor(sample.img)
-        sample.seg_masks = transforms.functional.to_tensor(sample.seg_masks).to(torch.int32)
+        sample.seg_masks = transforms.functional.pil_to_tensor(sample.seg_masks).to(torch.int32)
         # sample.bboxes = torch.tensor(sample.bboxes)
         return sample
 
@@ -221,7 +221,6 @@ class SegMaskToBBoxes:
         self.min_extent = min_extent
         self.n_bbox = n_bbox    
         self.min_pixel = min_pixel
-        self.boxes = torch.zeros((self.n_bbox, 5))
 
     def __call__(self, sample):
         """
@@ -231,10 +230,12 @@ class SegMaskToBBoxes:
         Returns:
             The transformed sample.
         """
+        boxes = torch.zeros((self.n_bbox, 5))        
         fg_classes = torch.tensor(self.fg_classes)
         _classes = torch.unique(sample.seg_masks[sample.seg_masks != 0], sorted=True)
         i = 0        
         for c in fg_classes:
+            _boxes = []
             if c in _classes:
                 mask  = sample.seg_masks == c
                 if mask.sum() < self.min_pixel:
@@ -244,13 +245,13 @@ class SegMaskToBBoxes:
                 for box in _boxes:
                     if (box[2] - box[0]) * (box[3] - box[1]) < self.min_bbox_size: 
                         continue
-                    self.boxes[i] = torch.cat([torch.Tensor([c]).to(box.dtype), box])
+                    box = box/sample.seg_masks[0].shape[0]
+                    boxes[i] = torch.cat([torch.Tensor([c]).to(box.dtype), box])
                     i += 1
                     if i == self.n_bbox:
-                        sample['bboxes'] = self.boxes
+                        sample['bboxes'] = boxes
                         return sample
-
-        sample['bboxes'] = self.boxes
+        sample['bboxes'] = boxes
         return sample
 
     
