@@ -97,7 +97,8 @@ if __name__ == "__main__":
         img_size=cfg.MODEL.img_size,
         batch_size=cfg.TRAIN.batch_size_per_gpu,
         train_list=train_list,
-        target_domain_names=cfg.DATASET.target_domain_names
+        target_domain_names=cfg.DATASET.target_domain_names,
+        normalize=cfg.TRAIN.img_norm
     )
 
     ref_list = []
@@ -116,7 +117,8 @@ if __name__ == "__main__":
         batch_size=cfg.TRAIN.batch_size_per_gpu,
         ref_list=ref_list,
         target_domain_names=cfg.DATASET.target_domain_names,
-        max_dataset_size=cfg.DATASET.max_dataset_size
+        max_dataset_size=cfg.DATASET.max_dataset_size,
+        normalize=cfg.TRAIN.img_norm,
     )
 
     input_provider = TrainProvider(loader=data_loader, latent_dim=cfg.MODEL.latent_dim, num_domains=cfg.DATASET.num_domains)
@@ -265,16 +267,22 @@ if __name__ == "__main__":
                 if (total_iters % cfg.TRAIN.display_sample_iter) == 0:
                     current_visuals = {'input_img': inputs.img_src, 'generated_img_1': fake_img,
                                        'reference_img': refs.img_ref, 'reconstructed_img': recon_img}
-                    current_domains = {'source_domain': inputs.d_src, 'predicted domain': d_src_pred, 'target_domain': refs.d_trg}
+                    current_domains = {'source_domain': inputs.d_src, 'target_domain': refs.d_trg}
                     visualizer.display_current_samples(current_visuals, current_domains, epoch,
                                                        (total_iters % cfg.TRAIN.image_save_iter == 0))
             if (total_iters % cfg.TRAIN.print_losses_iter) == 0:
                 visualizer.print_current_losses(epoch + 1, i, losses, time.time() - iter_date_time,
                                                 optimize_start_time - iter_date_time)
             if (cfg.VISDOM.save_intermediate and total_iters % cfg.VISDOM.save_epoch_freq == 0):
-                utils.save_image_from_tensor(inputs.img_src, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}/source_image_ep_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)))
-                utils.save_image_from_tensor(fake_img, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}/fake_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)))
-                utils.save_image_from_tensor(recon_img, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}/recon_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)))
+                utils.save_image_from_tensor(inputs.img_src, ncol=cfg.TRAIN.batch_size_per_gpu, 
+                                            filename='{}/{}/source_image_ep_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
+                                            normalize=cfg.TRAIN.img_norm)
+                utils.save_image_from_tensor(fake_img, ncol=cfg.TRAIN.batch_size_per_gpu, 
+                                            filename='{}/{}/fake_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
+                                            normalize=cfg.TRAIN.img_norm)
+                utils.save_image_from_tensor(recon_img, ncol=cfg.TRAIN.batch_size_per_gpu, 
+                                            filename='{}/{}/recon_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
+                                            normalize=cfg.TRAIN.img_norm)
                 if cfg.TRAIN.w_StyleDiv > 0.0:
                     utils.save_image_from_tensor(fake_img_2, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}/fake2_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)))                                                
             # Save model & optimizer and example images

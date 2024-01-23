@@ -222,16 +222,20 @@ def _make_balanced_sampler(labels, target_domain_names=[]):
 
 
 def get_train_loader(img_size: (int, int)=(256, 256),
-                     batch_size: int=8, prob: float=0.5, num_workers: int=8, train_list: str=None, imagenet_normalize: bool=True, max_scale: float=2.0, max_n_bbox=4, target_domain_names=[], seg_threshold=0.8):
+                     batch_size: int=8, prob: float=0.5, num_workers: int=8, train_list: str=None, normalize: str='imagenet', max_scale: float=2.0, max_n_bbox=4, target_domain_names=[], seg_threshold=0.8):
     logging.info('+ Preparing DataLoader to fetch training images '
           'during the training phase...')
 
-    if imagenet_normalize == True:
+    if normalize == 'imagenet':
         mean = [0.485, 0.456, 0.406]
         std = [0.229, 0.224, 0.225]
-    else:
+    elif normalize == 'default':
         mean = [0.5, 0.5, 0.5]
         std = [0.5, 0.5, 0.5]
+    else:
+        logging.warning('++ No normalization type specified')
+        mean = [1.0, 1.0, 1.0]
+        std = [0.0, 0.0, 0.0]
     
     transform = transforms.Compose([
         transforms.RandomResizedCrop(img_size, scale=(1.0, 2.0)),
@@ -295,16 +299,20 @@ def get_ref_loader(img_size: (int, int) = (256, 256),
                            drop_last=True)
 
 def get_test_loader(test_dir = '', img_size=256, batch_size=1,
-                    imagenet_normalize=True, shuffle=True,
+                    normalize='', shuffle=True,
                     num_workers=4, drop_last=False, max_n_bbox=-1, 
                     seg_threshold=0.8, patch_size=8):
     logging.info('Preparing DataLoader for the evaluation phase...')
-    if imagenet_normalize:
+    if normalize == 'imagenet':
         mean = [0.485, 0.456, 0.406]
-        std = [0.229, 0.224, 0.225]        
-    else:
+        std = [0.229, 0.224, 0.225]
+    elif normalize == 'default':
         mean = [0.5, 0.5, 0.5]
         std = [0.5, 0.5, 0.5]
+    else:
+        logging.warning('++ No normalization type specified')
+        mean = [1.0, 1.0, 1.0]
+        std = [0.0, 0.0, 0.0]
 
     transform_custom = transforms.Compose([
         ct.RandomScale(img_size),

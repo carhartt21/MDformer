@@ -141,12 +141,15 @@ _C.TRAIN.workers = 16
 # weights for losses
 _C.TRAIN.w_GAN = 1.0
 _C.TRAIN.w_Recon = 10.0
+_C.TRAIN.w_StyleRef = 10.0
 _C.TRAIN.w_StyleDiv = 10.0
 _C.TRAIN.w_NCE = 2.0
 _C.TRAIN.w_Instance_NCE = 2.0
 _C.TRAIN.w_Cycle = 2.0
 _C.TRAIN.w_DClass = 1.0
 
+# image normalization type one of imagenet, default, none
+_C.TRAIN.img_norm = 'imagenet'
 # frequency to save checkpoints 
 _C.TRAIN.save_epoch = 5
 # frequency to display training info

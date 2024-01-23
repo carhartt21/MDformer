@@ -431,9 +431,20 @@ def tensor2im(input_image, imtype=np.uint8):
     except RuntimeError:
         return np.ones_like(image_numpy.transpose([2, 0, 1])) * 255
 
-def save_image_from_tensor(x, ncol, filename):
+def save_image_from_tensor(x, filename, normalize=''):
     _x = x.clone().detach()
-    _x = denormalize(_x)
+    if normalize == 'imagenet':
+        mean = torch.Tensor([0.485, 0.456, 0.406])
+        std = torch.Tensor([0.229, 0.224, 0.225])
+        _x = denormalize(_x, mean=mean, std=std)
+    elif normalize == 'default':
+        mean = torch.Tensor([0.5, 0.5, 0.5])
+        std = torch.Tensor([0.5, 0.5, 0.5])
+        _x = denormalize(_x, mean=mean, std=std)
+    else: 
+        _x = x
+    # grid = vutils.make_grid(_x)
+    # ndarr = grid.clamp_(0, 255).permute(1, 2, 0).to("cpu", torch.uint8).numpy()
     vutils.save_image(_x.cpu(), filename, padding=0)
 
 def save_image(image_numpy, image_path, aspect_ratio=1.0):
