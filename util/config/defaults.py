@@ -126,7 +126,7 @@ _C.TRAIN.lr = 0.02
 _C.TRAIN.lr_encoder = 2e-4
 _C.TRAIN.lr_generator = 2e-4
 _C.TRAIN.lr_discriminator = 2e-4
-_C.TRAIN.lr_scheduler = True
+_C.TRAIN.lr_scheduler = False
 _C.TRAIN.lr_mappingnetwork = 4e-4
 _C.TRAIN.lr_MLP = 2e-4
 # learning rate scheduler step size
@@ -216,7 +216,7 @@ _C.VISDOM.port = 8097
 # name of the visdom workspace
 _C.VISDOM.env = 'main'
 # frequency to save visualization results
-_C.VISDOM.save_epoch_freq = 1000
+_C.VISDOM.save_results_freq = 1000
 # save intermediate training results to disk as html
 _C.VISDOM.save_intermediate = True
 
