@@ -150,6 +150,10 @@ def compute_G_loss(inputs: Dict,
     if cfg.TRAIN.w_Recon > 0.0:
         s_fake = model_G.StyleEncoder(fake_img, torch.argmax(refs.d_trg, dim=1))
         G_losses.style_loss = cfg.TRAIN.w_Recon * compute_style_recon_loss(s_fake, s_trg, criterions.Idt)
+
+    if cfg.TRAIN.w_StyleRef > 0.0:
+        s_ref = model_G.StyleEncoder(refs.img_ref, torch.argmax(refs.d_trg, dim=1))
+        G_losses.style_ref_loss = cfg.TRAIN.w_StyleRef * compute_style_ref_loss(s_fake, s_ref, criterions.Idt)
     
     if cfg.TRAIN.w_NCE > 0.0 or (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0):
         fake_feat_content, fake_features = model_G.ContentEncoder(fake_img, cfg.MODEL.feat_layers)
@@ -227,6 +231,21 @@ def compute_GAN_loss(fake, target_domain, model, criterion):
 def compute_style_recon_loss(src, tgt, criterion): 
     """
     Calculate the style reconstruction loss.
+
+    Args:
+        src (torch.Tensor): Source image.
+        tgt (torch.Tensor): Target image.
+        criterion (torch.nn.Module): Criterion for calculating the loss.
+
+    Returns:
+        torch.Tensor: Style reconstruction loss.
+    """
+    return criterion(src, tgt)
+
+
+def compute_style_ref_loss(src, tgt, criterion): 
+    """
+    Calculate the style reference loss.
 
     Args:
         src (torch.Tensor): Source image.
