@@ -37,7 +37,9 @@ class RandomCrop:
         """
         i, j, h, w = transforms.RandomCrop.get_params(sample.img, output_size=self.size)
         sample.img = transforms.functional.crop(sample.img, i, j, h, w)
-        sample['seg_masks'] = transforms.functional.crop(sample['seg_masks'], i, j, h, w)
+        sample.seg_masks = transforms.functional.crop(sample.seg_masks, i, j, h, w)
+        _i, _j, _h, _w = transforms.RandomCrop.get_params(sample.ref_img, output_size=self.size)
+        sample.ref_img = transforms.functional.crop(sample.ref_img, _i, _j, _h, _w)
         return sample
 
 
@@ -65,15 +67,29 @@ class RandomScale:
         Returns:
             The transformed sample.
         """
-        image = sample.img
+        scale, w = self.get_scale(sample.img)
+        ref_scale, w_ref = self.get_scale(sample.ref_img)
+        sample.img = transforms.functional.resize(sample.img, int(w * scale))
+        sample.seg_masks  = transforms.functional.resize(sample.seg_masks , int(w * scale), interpolation=InterpolationMode.NEAREST)
+        sample.ref_img = transforms.functional.resize(sample.ref_img, int(w_ref * ref_scale))
+        return sample
+    
+    def get_scale(self, image):
+        """
+        Get the scale of the input sample.
+
+        Args:
+            sample: The input sample.
+
+        Returns:
+            The scale of the input sample.
+        """
         w, h = image.size[:2]
         min_scale = max(self.output_size[0]/w, self.output_size[1]/h)
         max_scale = min_scale * 1.25
         scale = random.uniform(min_scale, max_scale)
-        sample.img = transforms.functional.resize(image, int(w * scale))
-        sample.seg_masks  = transforms.functional.resize(sample.seg_masks , int(w * scale), interpolation=InterpolationMode.NEAREST)
-        return sample
-    
+        return scale, w
+
 class HorizontalFlip:
     def __init__(self, p: float = 0.5):
         """
@@ -101,6 +117,7 @@ class HorizontalFlip:
         if random.random() < self.p:
             sample.img = transforms.functional.hflip(image)
             sample.seg_masks = transforms.functional.hflip(seg_masks)
+            sample.ref_img = transforms.functional.hflip(sample.ref_img)
         return sample
 
 class Normalize:
@@ -131,6 +148,7 @@ class Normalize:
             The transformed sample.
         """
         sample.img = transforms.functional.normalize(sample.img, self.mean, self.std)
+        sample.ref_img = transforms.functional.normalize(sample.ref_img, self.mean, self.std)
         return sample
 
 class ToTensor:
@@ -145,6 +163,7 @@ class ToTensor:
             The transformed sample.
         """
         sample.img = transforms.functional.to_tensor(sample.img)
+        sample.ref_img = transforms.functional.to_tensor(sample.ref_img)
         sample.seg_masks = transforms.functional.pil_to_tensor(sample.seg_masks).to(torch.int32)
         # sample.bboxes = torch.tensor(sample.bboxes)
         return sample

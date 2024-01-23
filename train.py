@@ -93,14 +93,6 @@ if __name__ == "__main__":
     if len(train_list) < num_domains:
         logger.warning("Number of matching folders in the directory {} is less than number of domains {}.".format(len(train_list), num_domains))
 
-    data_loader = get_train_loader(
-        img_size=cfg.MODEL.img_size,
-        batch_size=cfg.TRAIN.batch_size_per_gpu,
-        train_list=train_list,
-        target_domain_names=cfg.DATASET.target_domain_names,
-        normalize=cfg.TRAIN.img_norm
-    )
-
     ref_list = []
     for td in cfg.DATASET.target_domain_names:
         if os.path.isdir(os.path.join(cfg.DATASET.ref_dir, td)):
@@ -112,17 +104,18 @@ if __name__ == "__main__":
     if len(ref_list) < num_domains:
         logger.warning("Number of matching folders in the directory {} is less than number of domains {}.".format(len(ref_list), num_domains))
 
-    ref_loader = get_ref_loader(
+
+    data_loader = get_train_loader(
         img_size=cfg.MODEL.img_size,
         batch_size=cfg.TRAIN.batch_size_per_gpu,
+        train_list=train_list,
         ref_list=ref_list,
         target_domain_names=cfg.DATASET.target_domain_names,
-        max_dataset_size=cfg.DATASET.max_dataset_size,
-        normalize=cfg.TRAIN.img_norm,
+        normalize=cfg.TRAIN.img_norm
     )
 
+
     input_provider = TrainProvider(loader=data_loader, latent_dim=cfg.MODEL.latent_dim, num_domains=cfg.DATASET.num_domains)
-    ref_provider = RefProvider(loader_ref=ref_loader)
 
     # model_load
     model_G, parameter_G, model_D, parameter_D, model_F, parameter_F, parameter_M = initialize.build_model(cfg=cfg, device=device, num_domains=num_domains,
@@ -171,8 +164,8 @@ if __name__ == "__main__":
 
         box_feature = torch.empty(1).to(device)
         for i in range(0, cfg.TRAIN.epoch_iters//cfg.TRAIN.batch_size_per_gpu):
-            inputs = next(input_provider)
-            refs = next(ref_provider, inputs.d_src)
+            inputs, refs = next(input_provider)
+            # refs = next(ref_provider, inputs.d_src)
             # for key, val in inputs.items():
             #     if isinstance(val, torch.Tensor):
             #         inputs[key] = val.to(device)
@@ -284,7 +277,9 @@ if __name__ == "__main__":
                                             filename='{}/{}/recon_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
                                             normalize=cfg.TRAIN.img_norm)
                 if cfg.TRAIN.w_StyleDiv > 0.0:
-                    utils.save_image_from_tensor(fake_img_2, ncol=cfg.TRAIN.batch_size_per_gpu, filename= '{}/{}/fake2_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)))                                                
+                    utils.save_image_from_tensor(fake_img_2, 
+                                                 filename= '{}/{}/fake2_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)), 
+                                                 normalize=cfg.TRAIN.img_norm)                                                
             # Save model & optimizer and example images
         if epoch > 0 and (epoch % cfg.TRAIN.save_epoch) == 0:
             utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_G, optimizer_G)
