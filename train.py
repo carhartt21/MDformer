@@ -21,7 +21,8 @@ from data import create_dataset
 from util.config import cfg
 from munch import Munch
 from data_loader import MultiDomainDataset, TrainProvider, RefProvider, get_train_loader, get_ref_loader
-
+from torchvision.utils import draw_bounding_boxes
+from PIL import Image
 # TRAIN = 1
 # EVAL = 0
 
@@ -266,7 +267,8 @@ if __name__ == "__main__":
             if (total_iters % cfg.TRAIN.print_losses_iter) == 0:
                 visualizer.print_current_losses(epoch + 1, i, losses, time.time() - iter_date_time,
                                                 optimize_start_time - iter_date_time)
-            if (cfg.VISDOM.save_intermediate and total_iters % cfg.VISDOM.save_epoch_freq == 0):
+            if (cfg.VISDOM.save_intermediate and total_iters % cfg.VISDOM.save_results_freq == 0):
+                logging.info('++++ Saving intermediate results to {}/{}'.format(cfg.TRAIN.log_path, cfg.MODEL.name))
                 utils.save_image_from_tensor(inputs.img_src, 
                                             filename='{}/{}/source_image_ep_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
                                             normalize=cfg.TRAIN.img_norm)
@@ -279,7 +281,14 @@ if __name__ == "__main__":
                 if cfg.TRAIN.w_StyleDiv > 0.0:
                     utils.save_image_from_tensor(fake_img_2, 
                                                  filename= '{}/{}/fake2_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)), 
-                                                 normalize=cfg.TRAIN.img_norm)                                                
+                                                 normalize=cfg.TRAIN.img_norm)
+                if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0:
+                    bbox = (inputs.bbox[0, :, 1:].cpu()*cfg.MODEL.img_size[0]).to(torch.int)
+                    img = utils.denormalize(inputs.img_src[0].unsqueeze(dim=0).cpu())
+                    img = img.squeeze().mul(255).add_(0.5).clamp_(0, 255).to(torch.uint8)
+                    img = draw_bounding_boxes(img, bbox).permute(1, 2, 0).numpy()
+                    img = Image.fromarray(img)
+                    img.save('{}/{}/source_image_with_bb_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)))
             # Save model & optimizer and example images
         if epoch > 0 and (epoch % cfg.TRAIN.save_epoch) == 0:
             utils.save_component(cfg.TRAIN.log_path, cfg.MODEL.name, epoch, model_G, optimizer_G)
