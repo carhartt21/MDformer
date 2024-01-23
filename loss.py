@@ -153,7 +153,7 @@ def compute_G_loss(inputs: Dict,
 
     if cfg.TRAIN.w_StyleRef > 0.0:
         s_ref = model_G.StyleEncoder(refs.img_ref, torch.argmax(refs.d_trg, dim=1))
-        G_losses.style_ref_loss = cfg.TRAIN.w_StyleRef * compute_style_ref_loss(s_fake, s_ref, criterions.Idt)
+        G_losses.style_ref_loss = cfg.TRAIN.w_StyleRef * compute_style_ref_loss(s_trg, s_ref, criterions.Idt)
     
     if cfg.TRAIN.w_NCE > 0.0 or (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0):
         fake_feat_content, fake_features = model_G.ContentEncoder(fake_img, cfg.MODEL.feat_layers)
