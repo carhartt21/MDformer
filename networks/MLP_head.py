@@ -59,7 +59,7 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[], debug=False, i
         init_weights(net, init_type, init_gain=init_gain, debug=debug)
     return net
 
-class MLP_Head(nn.Module):
+class MLPHead(nn.Module):
     """
     Multi-Layer Perceptron (MLP) head module.
 
@@ -86,7 +86,7 @@ class MLP_Head(nn.Module):
     # TODO: use different patch_ids for different min batches
 
     def __init__(self, use_mlp=True, init_type='xavier', init_gain=0.02, nc=256):
-        super(MLP_Head, self).__init__()
+        super(MLPHead, self).__init__()
         self.l2norm = blocks.Normalize(2)
         self.use_mlp = use_mlp
         self.nc = nc

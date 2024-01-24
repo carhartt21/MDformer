@@ -29,7 +29,6 @@ _C.DATASET.num_domains = 8
 # maximum number of images per folder
 _C.DATASET.max_dataset_size = 200000
 # Maximum number of object boxes per image
-_C.DATASET.n_bbox = -1
 # enable random flip during training
 _C.DATASET.random_flip = True
 
@@ -62,7 +61,7 @@ _C.MODEL.num_neg = 64
 # number of positive samples for NCE loss
 _C.MODEL.num_pos = 1
 # input image size
-_C.MODEL.img_size = (352, 352)
+_C.MODEL.img_size = (384, 384)
 # Style code dimension
 _C.MODEL.style_dim = 64
 # Latent code dimension
@@ -70,7 +69,7 @@ _C.MODEL.latent_dim = 16
 # dimension of the semantic embedding
 _C.MODEL.sem_embed_dim = 64
 # Mapping Network hidden dimension
-_C.MODEL.hidden_dim = 1088
+_C.MODEL.hidden_dim = 512
 # number of content channels
 _C.MODEL.content_dim = 256
 # number of downsampling layers in the content encoder
@@ -120,34 +119,41 @@ _C.TRAIN.epoch_iters = 5000
 _C.TRAIN.optim = 'Adam'
 # momentum terms for Adam optimizer
 _C.TRAIN.optim_beta = (0.5, 0.999)
+# weight decay
+_C.TRAIN.weight_decay = 0.0001
 # learning rate
-_C.TRAIN.lr = 0.02
-# indiviudal learning rate for encoder, generator and discriminator
-_C.TRAIN.lr_encoder = 2e-4
-_C.TRAIN.lr_generator = 2e-4
-_C.TRAIN.lr_discriminator = 2e-4
-_C.TRAIN.lr_scheduler = False
-_C.TRAIN.lr_mappingnetwork = 4e-4
+_C.TRAIN.lr = 2e-4
+# indiviudal learning rate for encoder, generator and discriminator... 
+_C.TRAIN.lr_CE = 2e-4 
+_C.TRAIN.lr_G = 2e-4
+_C.TRAIN.lr_D = 2e-4
+_C.TRAIN.lr_MN = 2e-6
 _C.TRAIN.lr_MLP = 2e-4
+
 # learning rate scheduler step size
+_C.TRAIN.lr_scheduler = False
 _C.TRAIN.scheduler_step_size = 100
 # power in poly to drop LR
 _C.TRAIN.lr_pow = 0.9
 # fix bn params, only under finetuning
 _C.TRAIN.fix_bn = False
 # number of data loading workers
-_C.TRAIN.workers = 16
+_C.TRAIN.workers = 20
 
 # weights for losses
 _C.TRAIN.w_GAN = 1.0
 _C.TRAIN.w_Recon = 10.0
 _C.TRAIN.w_StyleRef = 10.0
 _C.TRAIN.w_StyleDiv = 10.0
+_C.TRAIN.lambda_StyleDiv = 1.0
+_C.TRAIN.w_StyleDiv_iter = 100000
 _C.TRAIN.w_NCE = 2.0
 _C.TRAIN.w_Instance_NCE = 2.0
 _C.TRAIN.w_Cycle = 2.0
 _C.TRAIN.w_DClass = 1.0
-
+_C.TRAIN.w_l_reg = 1.0
+# maximum number of bounding boxes
+_C.TRAIN.n_bbox = 4
 # image normalization type one of imagenet, default, none
 _C.TRAIN.img_norm = 'imagenet'
 # frequency to save checkpoints 

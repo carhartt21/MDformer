@@ -90,10 +90,10 @@ class MultiDomainDataset(data.Dataset):
             _samples = parse_input_folders([domain_folder_path], max_sample=self.max_sample)
             domain_name = domain_folder_path.split('/')[-1]
             self.src_domains += [domain_to_onehot(domain_name, self.target_domain_names)] * len(_samples)
-            logging.info('++ {} samples found in: {}'.format(len(_samples), domain_name))
+            logging.info(f'>> {len(_samples):,} samples found in: {domain_name}')
             self.imgs += _samples
-        assert self.imgs != [], '+ No training images found'     
-        logging.info('+++ Total: {} training samples found'.format(len(self.imgs)))    
+        assert self.imgs != [], '>> No training images found'     
+        logging.info(f'>>>> Total: {len(self.imgs):,} training samples found')    
         return self.imgs, self.src_domains
 
     def _make_ref_dataset(self):
@@ -102,10 +102,10 @@ class MultiDomainDataset(data.Dataset):
             _ref_samples = parse_input_folders([domain_folder_path], max_sample=self.max_sample)
             domain_name = domain_folder_path.split('/')[-1]
             self.trg_domains += [domain_to_onehot(domain_name, self.target_domain_names)] * len(_ref_samples)
-            logging.info('++ {} samples found in: {}'.format(len(_ref_samples), domain_name))
+            logging.info(f'>> {len(_ref_samples):,} samples found in: {domain_name}')
             self.ref_samples += _ref_samples
-        assert self.ref_samples != [], '+ No reference images found'     
-        logging.info('+++ Total: {} reference samples found'.format(len(self.ref_samples)))    
+        assert self.ref_samples != [], '>> No reference images found'     
+        logging.info(f'>>>> Total: {len(self.ref_samples):,} reference samples found')    
         return self.ref_samples, self.trg_domains
              
     def __getitem__(self, index):
@@ -134,7 +134,7 @@ class MultiDomainDataset(data.Dataset):
             except UnidentifiedImageError:
                 seg_masks = Image.new('L', img.size)
         else:
-            logging.error('++ No semantic labels found for: {}'.format(seg_path))
+            logging.error('>> No semantic labels found for: {}'.format(seg_path))
             seg_masks  = Image.new('L', img.size)
         sample.seg_masks = seg_masks
         if self.transform is not None:
@@ -162,10 +162,10 @@ class ReferenceDataset(data.Dataset):
             _ref_samples = parse_input_folders([domain_folder_path], max_sample=self.max_sample)
             domain_name = domain_folder_path.split('/')[-1]
             self.ref_domains += [domain_to_onehot(domain_name, self.target_domain_names)] * len(_ref_samples)
-            logging.info('++ {} samples found in: {}'.format(len(_ref_samples), domain_name))
+            logging.info('>> {} samples found in: {}'.format(len(_ref_samples), domain_name))
             self.ref_samples += _ref_samples
-        assert self.ref_samples != [], '+ No reference images found'     
-        logging.info('+++ Total: {} reference samples found'.format(len(self.ref_samples)))    
+        assert self.ref_samples != [], '>> No reference images found'     
+        logging.info(f'>>>> Total: {len(self.ref_samples):,} reference samples found')    
         return self.ref_samples, self.ref_domains
 
     def __getitem__(self, index, d_src=None):
@@ -199,7 +199,7 @@ class TestDataset(data.Dataset):
     def _make_dataset(self):
         if self.test_dir is not None:
             self.imgs = parse_input_folders([self.test_dir], max_sample=self.max_sample)     
-        logging.info('++ {} samples found in: {}'.format(len(self.imgs), self.test_dir))                    
+        logging.info('>> {} samples found in: {}'.format(len(self.imgs), self.test_dir))                    
         return
     def __getitem__(self, index):
         img_path = self.imgs[index]
@@ -218,12 +218,12 @@ class TestDataset(data.Dataset):
             except UnidentifiedImageError:
                 seg_masks = Image.new('L', img.size)
         else:
-            logging.error('++ No semantic labels found for: {}'.format(img_path))       
+            logging.error('>> No semantic labels found for: {}'.format(img_path))       
             seg_masks  = Image.new('L', img.size)
         sample.seg_masks = seg_masks
         if self.transform is not None:
             sample = self.transform(sample)
-        logging.info('++ TestDataset: {}'.format(sample))
+        logging.info('>> TestDataset: {sample}')
 
         return sample
     
@@ -232,7 +232,7 @@ class TestDataset(data.Dataset):
 
 
 def _make_balanced_sampler(labels, target_domain_names=[]):
-    logging.info('+ Creating balanced sampler dataset...')
+    logging.info('>> Creating balanced sampler dataset...')
     class_counts = torch.bincount(labels)
     class_weights = 1. / class_counts
     weights = class_weights[labels]
@@ -241,8 +241,8 @@ def _make_balanced_sampler(labels, target_domain_names=[]):
 
 def get_train_loader(img_size: (int, int)=(256, 256),
                      batch_size: int=8, prob: float=0.5, num_workers: int=8, train_list: str=None, ref_list=[], normalize: str='imagenet', max_scale: float=2.0, max_n_bbox=4, target_domain_names=[], seg_threshold=0.8):
-    logging.info('+ Preparing DataLoader to fetch training images '
-          'during the training phase...')
+    
+    logging.info('====== Preparing DataLoader ======')
 
     if normalize == 'imagenet':
         mean = [0.485, 0.456, 0.406]
@@ -251,7 +251,7 @@ def get_train_loader(img_size: (int, int)=(256, 256),
         mean = [0.5, 0.5, 0.5]
         std = [0.5, 0.5, 0.5]
     else:
-        logging.warning('++ No normalization type specified')
+        logging.warning('>> No normalization type specified')
         mean = [1.0, 1.0, 1.0]
         std = [0.0, 0.0, 0.0]
     
@@ -284,7 +284,7 @@ def get_train_loader(img_size: (int, int)=(256, 256),
 def get_ref_loader(img_size: (int, int) = (256, 256),
                    batch_size: int = 8, prob: float = 0.5, num_workers: int = 8, ref_list: str = None,
                    imagenet_normalize: bool = True, max_scale: float = 2.0, target_domain_names=[], max_dataset_size=-1, normalize='imagenet'):
-    logging.info('+ Preparing DataLoader to fetch reference images during the training phase...')
+    logging.info('====== Preparing DataLoader ======')
 
     if normalize == 'imagenet':
         mean = [0.485, 0.456, 0.406]
@@ -293,7 +293,7 @@ def get_ref_loader(img_size: (int, int) = (256, 256),
         mean = [0.5, 0.5, 0.5]
         std = [0.5, 0.5, 0.5]
     else:
-        logging.warning('++ No normalization type specified')
+        logging.warning('>> No normalization type specified')
         mean = [1.0, 1.0, 1.0]
         std = [0.0, 0.0, 0.0]
 
@@ -324,6 +324,39 @@ def get_test_loader(test_dir = '', img_size=256, batch_size=1,
                     normalize='imagenet', shuffle=True,
                     num_workers=4, drop_last=False, max_n_bbox=-1, 
                     seg_threshold=0.8, patch_size=8):
+    logging.info('====== Preparing DataLoader ======')
+    if normalize == 'imagenet':
+        mean = [0.485, 0.456, 0.406]
+        std = [0.229, 0.224, 0.225]
+    elif normalize == 'default':
+        mean = [0.5, 0.5, 0.5]
+        std = [0.5, 0.5, 0.5]
+    else:
+        logging.warning('>> No normalization type specified')
+        mean = [1.0, 1.0, 1.0]
+        std = [0.0, 0.0, 0.0]
+
+    transform_custom = transforms.Compose([
+        ct.RandomScale(img_size),
+        ct.RandomCrop(img_size),
+        ct.ToTensor(),        
+        ct.Normalize(mean=mean,
+                std=std),
+        ct.SegMaskToPatches(patch_size, seg_threshold)
+        ])
+
+    dataset = TestDataset(test_dir=test_dir, transform=transform_custom, input_size=img_size)
+    return data.DataLoader(dataset=dataset,
+                           batch_size=batch_size,
+                           shuffle=shuffle,
+                           num_workers=num_workers,
+                           pin_memory=True,
+                           drop_last=drop_last)
+
+def get_eval_loader(test_dir = '', img_size=256, batch_size=1,
+                    normalize='imagenet', shuffle=True,
+                    num_workers=4, drop_last=False, max_n_bbox=-1, 
+                    seg_threshold=0.8, patch_size=8):
     logging.info('Preparing DataLoader for the evaluation phase...')
     if normalize == 'imagenet':
         mean = [0.485, 0.456, 0.406]
@@ -332,7 +365,7 @@ def get_test_loader(test_dir = '', img_size=256, batch_size=1,
         mean = [0.5, 0.5, 0.5]
         std = [0.5, 0.5, 0.5]
     else:
-        logging.warning('++ No normalization type specified')
+        logging.warning('>> No normalization type specified')
         mean = [1.0, 1.0, 1.0]
         std = [0.0, 0.0, 0.0]
 
@@ -411,7 +444,7 @@ class RefProvider:
 
     def __next__(self, d_src=None):
         ref = self._fetch_refs()
-        logging.info('++ RefProvider: {}'.format(ref.domain.shape))
+        logging.info('>> RefProvider: {}'.format(ref.domain.shape))
         if d_src is not None:
             logging.info('d_src:{} ref_domains:{}'.format(torch.argmax(d_src), torch.argmax(ref.domain)))
             while torch.equal(torch.argmax(d_src), torch.argmax(ref.domain)):
@@ -447,6 +480,6 @@ class TestProvider:
             inputs = Munch(img=sample.img, seg=sample.seg_masks)
         else:
             raise NotImplementedError
-        logging.info('++ TestProvider: {}'.format(inputs))
+        logging.info('>> TestProvider: {}'.format(inputs))
         return Munch({k: v.to(self.device) if k is not 'fname' else [v]
                       for k, v in inputs.items()})    

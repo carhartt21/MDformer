@@ -43,7 +43,7 @@ def translate_using_latent(model_G, cfg, input, d_trg, psi, filename, latent_dim
     d_trg = rearrange(d_trg, 'b -> 1 b')
     s_trg = model_G.MappingNetwork(z_trg, d_trg)
     s_trg = torch.lerp(s_avg, s_trg, 0.0)
-    assign_adain_params(model_G.MLP_Adain(s_trg), model_G.Transformer.transformer.layers)
+    assign_adain_params(model_G.MLPAdain(s_trg), model_G.Transformer.transformer.layers)
     feat_content, features = model_G.ContentEncoder(input.img, feat_layers)    
     aggregated_feat, _, _ = model_G.Transformer(feat_content, sem_embed=True, sem_labels=input.seg, n_bbox=-1)
      
@@ -93,7 +93,7 @@ def onehot_to_domain(onehot, target_domain_names=[], domain_dict='helper/data_cf
 def domain_to_onehot(domain, target_domain_names):
     """Convert domain name to one-hot vector."""
     idx, n_dom = get_domain_indexes([domain])
-    onehot = torch.zeros(n_dom, dtype=torch.float32)
+    onehot = torch.zeros(n_dom, dtype=torch.int)
     onehot[idx] = 1    
     idxs, _ = get_domain_indexes(target_domain_names) 
     return onehot[idxs]
@@ -281,6 +281,21 @@ def model_mode(model, mode = 0):
             m.train()
         else:
             m.eval()
+
+def print_network(module, name):
+    num_params = sum(p.numel() for p in module.parameters())
+    logging.info(f'>> # Parameters {name}: {num_params:,}')
+
+
+def he_init(module):
+    if isinstance(module, nn.Conv2d):
+        nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
+        if module.bias is not None:
+            nn.init.constant_(module.bias, 0)
+    if isinstance(module, nn.Linear):
+        nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
+        if module.bias is not None:
+            nn.init.constant_(module.bias, 0)
 
 def segmentation_to_bbox(mask, bg_classes = [0,1,2]):
     """Transfer a segmentation mask derived from an image file to a dictionary of bounding boxes for each class in the map.

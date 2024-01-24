@@ -65,6 +65,7 @@ class Visualizer():
         Step 3: create an HTML object for saving HTML filters
         Step 4: create a logging file to store training losses
         """
+        logging.info('====== Visualizer ======')
         self.opt = opt  # cache the option
 
         if opt.display_id < 0:
@@ -226,7 +227,7 @@ class Visualizer():
             self.create_visdom_connections()
 
     # losses: same format as |losses| of plot_current_losses
-    def print_current_losses(self, epoch, iters, losses, t_comp, t_data):
+    def print_current_losses(self, epoch, iters, losses, t_comp):
         """print current losses on console; also save the losses to the disk
 
         Parameters:
@@ -234,13 +235,12 @@ class Visualizer():
             iters (int) -- current training iteration during this epoch (reset to 0 at the end of every epoch)
             losses (OrderedDict) -- training losses stored in the format of (name, float) pairs
             t_comp (float) -- computational time per data point (normalized by batch_size)
-            t_data (float) -- data loading time per data point (normalized by batch_size)
         """
-        message = '============{}============ \n'.format(self.name)
-        message += 'Epoch: %d, iters: %d, time: %.3f, data: %.3f \n' % (epoch, iters, t_comp, t_data)
+        message = f'===== {self.name} ===== \n'
+        message += f'>> Epoch: {epoch}, iters: {iters}, time: {t_comp:.2f}\n'
         for k, v in losses.items():
-            message += '%s: %.3f \n' % (k, v)
+            message += f'>>>> {k}: {v:.3f} \n'
 
-        logging.info('+++ {}'.format(message))  # print the message
+        logging.info('{}'.format(message))  # print the message
         with open(self.log_name, "a") as log_file:
             log_file.write('%s\n' % message)  # save the message

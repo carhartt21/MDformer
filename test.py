@@ -12,7 +12,7 @@ from visualizer import Visualizer
 from data_loader import TestProvider, get_test_loader
 
 from util.config import cfg
-from data_loader import MultiDomainDataset, InputProvider, RefProvider, get_train_loader, get_ref_loader
+from data_loader import MultiDomainDataset, TrainProvider, RefProvider, get_train_loader, get_ref_loader
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -69,7 +69,7 @@ if __name__ == "__main__":
         for key in model_G.keys():
             file = os.path.join(cfg.MODEL.weight_path, f'{key}.pth')
             if os.path.isfile(file):
-                logging.info("++ Success load weight {}".format(key))
+                logging.info(">> Success load weight {}".format(key))
                 model_load_dict = torch.load(file, map_location=device)
                 keys = model_load_dict.keys()
                 values = model_load_dict.values()
@@ -81,7 +81,7 @@ if __name__ == "__main__":
                 new_dict = OrderedDict(list(zip(new_keys,values)))
                 model_G[key].load_state_dict(new_dict)
             else:
-                logging.info("++ Does not exist {}".format(file))
+                logging.info(">> Does not exist {}".format(file))
     else:
         logging.info("+ No weight loaded: Couldn't find weights under {}".format(cfg.MODEL.weight_path))
 # Set eval mode for every module in model_G
