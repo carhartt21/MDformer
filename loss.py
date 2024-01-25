@@ -99,7 +99,7 @@ def compute_D_loss(inputs, refs, model, criterions, cfg, from_lat=True, gan_mode
     for _, loss in D_losses.items():
         total_D_loss += loss
         
-    return total_D_loss, D_losses
+    return total_D_loss/len(D_losses), D_losses
 
 
 def compute_G_loss(inputs: Dict, 
