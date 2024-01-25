@@ -62,7 +62,7 @@ if __name__ == "__main__":
     cfg.merge_from_file(args.cfg)
     cfg.merge_from_list(args.opts)
 
-    logger.info('====== Loaded configuration =======')
+    logger.info('===== Loaded configuration =====')
     logger.info(f'>> Source: {args.cfg}')
     logger.info(yaml.dump(cfg))
     # for k, v in cfg.items():

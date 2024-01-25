@@ -65,7 +65,7 @@ class Visualizer():
         Step 3: create an HTML object for saving HTML filters
         Step 4: create a logging file to store training losses
         """
-        logging.info('====== Visualizer ======')
+        logging.info('===== Visualizer =====')
         self.opt = opt  # cache the option
 
         if opt.display_id < 0:
@@ -100,7 +100,7 @@ class Visualizer():
         self.log_name = os.path.join(log_path, name, 'loss_log.txt')
         with open(self.log_name, "a") as log_file:
             now = time.strftime("%c")
-            log_file.write('================ Training Loss (%s) ================\n' % now)
+            log_file.write('========== Training Loss (%s) ==========\n' % now)
 
     def reset(self):
         """Reset the self.saved status"""

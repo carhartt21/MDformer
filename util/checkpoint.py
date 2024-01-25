@@ -15,9 +15,10 @@ class CheckpointIO(object):
 
     def save(self, epoch):
         fname = self.fname_template.format(epoch)
-        print('Saving checkpoint into %s...' % fname)
+        logging.info(f'>> Saving checkpoint to {fname}')
         outdict = {}
         for name, module in self.module_dict.items():
+            logging.info(f'>> Saving {module}')
             if self.data_parallel:
                 outdict[name] = module.module.state_dict()
             else:
@@ -28,13 +29,15 @@ class CheckpointIO(object):
     def load(self, epoch):
         fname = self.fname_template.format(epoch)
         assert os.path.exists(fname), fname + ' does not exist!'
-        logging.info('Loading checkpoint from %s...' % fname)
+        logging.info(f'>> Loading checkpoint from {fname}')
         if torch.cuda.is_available():
             module_dict = torch.load(fname)
         else:
             module_dict = torch.load(fname, map_location=torch.device('cpu'))
             
         for name, module in self.module_dict.items():
+            if 'MLPHead' in name:
+                continue
             if self.data_parallel:
                 module.module.load_state_dict(module_dict[name])
             else:

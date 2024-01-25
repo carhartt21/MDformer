@@ -63,17 +63,19 @@ class StarFormer(nn.Module):
             self.ckptios = [CheckpointIO(ospj(cfg.DIR, cfg.MODEL.name, 'ep_{}_model_ema.ckpt'), data_parallel=True, **self.model_ema)]
 
         self.to(self.device)
-        logging.info(f'====== Initialization =====')
+        logging.info(f'===== Initialization =====')
         for name, network in self.named_children():
             if ('ema' not in name) and ('MLPHead' not in name):
                 logging.info(f'>> Initializing {name}')
                 network.apply(utils.he_init)
 
     def _save_checkpoint(self, epoch):
+        logging.info(f'===== Save intermediate weights =====')
         for ckptio in self.ckptios:
             ckptio.save(epoch)
 
     def _load_checkpoint(self, epoch):
+        logging.info(f'===== Load pretrained weights =====')
         for ckptio in self.ckptios:
             ckptio.load(epoch)
 
@@ -114,7 +116,7 @@ class StarFormer(nn.Module):
             visualizer.reset() 
             iter_date_time = time.time()
 
-            logging.info('====== Training progress: Epoch {} ======'.format(epoch + 1))
+            logging.info('===== Training progress: Epoch {} ====='.format(epoch + 1))
 
             box_feature = torch.empty(1).to(device)        
             for i in range(0, cfg.TRAIN.epoch_iters//cfg.TRAIN.batch_size_per_gpu):                
@@ -123,7 +125,7 @@ class StarFormer(nn.Module):
                 # recon_img = torch.zeros(fake_img.shape).to(device)
 
                 # initialize MLPs the first iteration
-                if epoch == 0 and i == 0 and (
+                if epoch == cfg.TRAIN.start_epoch and i == 0 and (
                         cfg.TRAIN.w_NCE != 0.0 or (cfg.TRAIN.w_Instance_NCE != 0.0 and cfg.TRAIN.data.n_bbox > 0)):
                     parameter_F = []
                     _, _, features, _ = loss.model_generation(model=model, inputs=inputs, refs=refs, lat_trg=inputs.lat_trg, n_bbox=cfg.TRAIN.n_bbox, from_lat=True, feat_layers=cfg.MODEL.feat_layers)
@@ -131,14 +133,13 @@ class StarFormer(nn.Module):
                     if cfg.TRAIN.n_bbox > 0 and len(features) > len(cfg.MODEL.feat_layers):
                         features, box_feature = features[:-1], features[-1]                    
                     if cfg.TRAIN.w_NCE != 0.0:
-                        model.MLPHead.create_mlp(feats=features, device=device)
+                        model.MLPHead.module.create_mlp(feats=features, device=device)
                     if (cfg.TRAIN.w_Instance_NCE != 0.0 and cfg.TRAIN.n_bbox > 0):
-                        model.MLPHeadInst.create_mlp([box_feature], device)
+                        model.MLPHeadInst.module.create_mlp([box_feature], device)
                     for key, val in model.items():
                         if 'MLPHead' in key:
-                            model[key] = nn.DataParallel(val, device_ids=cfg.TRAIN.gpu_ids)
-                            model[key].to(device)
-                            model[key].train()
+                            logging.info(f'>> Initializing {key}')
+                            # model[key] = nn.DataParallel(val)
                             parameter_F += list(val.parameters())                                
                     optimizer.MLPHead = torch.optim.Adam(parameter_F, lr=float(cfg.TRAIN.lr))            
                 

@@ -68,14 +68,14 @@ def build_model(cfg):
     # logging.info("domain_idxs : {}".format(domain_idxs))
     # TODO: add test mode
     logging.info(">> Building the ContentEncoder")
-    ContentEncoder = networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling)
+    ContentEncoder = nn.DataParallel(networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling))
     logging.info(">> Building the StyleEncoder")
-    StyleEncoder = networks.StyleEncoder(input_channels=model_cfg.in_channels, 
+    StyleEncoder = nn.DataParallel(networks.StyleEncoder(input_channels=model_cfg.in_channels, 
                                                         n_generator_filters=model_cfg.n_generator_filters, 
                                                         style_dim=model_cfg.style_dim, 
-                                                        num_domains=num_domains)
+                                                        num_domains=num_domains))
     logging.info(">> Building the Transformer")
-    Transformer = networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
+    Transformer = nn.DataParallel(networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
                                                                  patch_size=model_cfg.patch_size, 
                                                                  patch_embed_C=model_cfg.TRANSFORMER.embed_C, 
                                                                  sem_embed_C=model_cfg.sem_embed_dim,
@@ -83,31 +83,31 @@ def build_model(cfg):
                                                                  depth=model_cfg.TRANSFORMER.depth, 
                                                                  heads=model_cfg.TRANSFORMER.heads, 
                                                                  mlp_dim=model_cfg.TRANSFORMER.mlp_dim,
-                                                                 vis = False)
+                                                                 vis = False))
     logging.info(">> Building the Generator")
-    Generator = networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
+    Generator = nn.DataParallel(networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
                                                   patch_size=model_cfg.patch_size, 
                                                   embed_C=model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim, 
                                                   feat_C=model_cfg.TRANSFORMER.feat_C, 
                                                   n_generator_filters=model_cfg.n_generator_filters,
-                                                  n_downsampling=model_cfg.n_downsampling)
+                                                  n_downsampling=model_cfg.n_downsampling))
     logging.info(">> Building the MLP Block") 
-    MLPAdain = networks.MLP(input_dim=model_cfg.style_dim, output_dim=2*(model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim))
+    MLPAdain = nn.DataParallel(networks.MLP(input_dim=model_cfg.style_dim, output_dim=2*(model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim)))
 
     logging.info(">> Building the Mapping Network")
-    MappingNetwork = networks.MappingNetwork(num_domains=num_domains, 
+    MappingNetwork = nn.DataParallel(networks.MappingNetwork(num_domains=num_domains, 
                                                             latent_dim=model_cfg.latent_dim,
                                                             style_dim=model_cfg.style_dim, 
-                                                            hidden_dim=model_cfg.hidden_dim)
+                                                            hidden_dim=model_cfg.hidden_dim))
     
 
     logging.info(">> Building the Discriminator")
-    Discriminator = networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3, num_domains=num_domains)
+    Discriminator = nn.DataParallel(networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3, num_domains=num_domains))
     logging.info(">> Building the MLP Heads")
     if (cfg.TRAIN.w_NCE>0.0):
-        MLPHead = networks.MLPHead()
+        MLPHead = nn.DataParallel(networks.MLPHead())
     if (cfg.TRAIN.w_Instance_NCE>0.0):
-        MLPHeadInst = networks.MLPHead()
+        MLPHeadInst = nn.DataParallel(networks.MLPHead())
 
     ContentEncoder_ema = copy.deepcopy(ContentEncoder)
     StyleEncoder_ema = copy.deepcopy(StyleEncoder)
@@ -134,11 +134,7 @@ def build_model(cfg):
                     StyleEncoder=StyleEncoder_ema,
                     Transformer=Transformer_ema,
                     Generator=Generator_ema,
-                    MLPAdain=MLPAdain_ema,
-                    MappingNetwork=MappingNetwork_ema,
-                    Discriminator=Discriminator_ema,
-                    MLPHead=MLPHead_ema,
-                    MLPHeadInst=MLPHeadInst_ema)
+                    MappingNetwork=MappingNetwork_ema)
 
     # if model_cfg.load_weight:
     #     logging.info("+ Loading Network weights")
@@ -175,12 +171,12 @@ def build_model(cfg):
     #             model_D[key].load_state_dict(new_dict)
     #         else:
     #             logging.info(">> Does not exist {}".format(file))
-    for key, val in model.items():
-        if 'MLPHead' not in key:
-            model[key] = nn.DataParallel(val)
+    # for key, val in model.items():
+    #     # if 'MLPHead' not in key:
+    #     model[key] = nn.DataParallel(val)
     # for key, val in model_ema.items():
-    #     if 'MLPHead' not in key:
-    #         model[key] = nn.DataParallel(val        
+    # #     if 'MLPHead' not in key:
+    #     model[key] = nn.DataParallel(val)       
     #         model_ema[key] = nn.DataParallel(val)
 
     # for key, val in model_D.items():
