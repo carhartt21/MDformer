@@ -1,6 +1,6 @@
 import os
 from packaging import version
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import torchvision.utils as vutils
 
 from argparse import Namespace
@@ -26,6 +26,37 @@ def denormalize(x, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
         t.mul_(s).add_(m)
     # B, 3, H, W
     return torch.clamp(ten, 0, 1).permute(3, 0, 1, 2)
+
+def domain_to_image_tensor(d_trg:torch.Tensor, target_domains:list, img_size=(320, 320)):
+    """Convert one-hot encoded domains to image tensors"""
+    domain_imgs = []
+    domains = d_trg.argmax(dim=1)
+    for i in range(d_trg.shape[0]):
+        domain_imgs.append(text_to_img(target_domains[domains[i]], img_size))
+    return torch.stack(domain_imgs, dim=0).to(d_trg.device)
+
+
+
+def text_to_img(text:str, img_size=(320, 320)):
+    """Convert domain name image as tensor"""
+    # Create a white square image
+    image = Image.new('RGB', img_size , 'white')
+
+    # Draw image with text using PIL    
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default(size=80)  # or specify a font with ImageFont.truetype()
+    _ , _, text_width, text_height = draw.textbbox((0, 0), text, font=font)
+    position = ((img_size[0] - text_width) // 2, (img_size[1] - text_height) // 2)
+    draw.text(position, text, fill="black", font=font)
+
+    # Convert the PIL Image to torch Tensor
+    numpy_image = np.array(image)
+    tensor_image = torch.from_numpy(numpy_image)
+    tensor_image = tensor_image.permute(2, 0, 1)
+
+    return tensor_image
+
+    
 
 @torch.no_grad()
 def translate_using_latent(model_G, cfg, input, d_trg, psi, filename, latent_dim=64, feat_layers=[]):

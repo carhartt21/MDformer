@@ -122,9 +122,9 @@ def compute_G_loss(inputs: Dict,
     if cfg.TRAIN.w_GAN > 0.0:
         G_losses.GAN_loss = cfg.TRAIN.w_GAN * compute_GAN_loss(fake_img, utils.batch_to_onehot(refs.d_trg), model.Discriminator, criterions.GAN)
     
-    if cfg.TRAIN.w_Recon > 0.0:
+    if cfg.TRAIN.w_StyleRecon > 0.0:
         s_fake = model.StyleEncoder(fake_img, refs.d_trg)
-        G_losses.style_loss = cfg.TRAIN.w_Recon * compute_style_recon_loss(s_fake, s_trg, criterions.Idt)
+        G_losses.style_loss = cfg.TRAIN.w_StyleRecon * compute_style_recon_loss(s_fake, s_trg, criterions.Idt)
     
     if cfg.TRAIN.w_NCE > 0.0 or (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0):
         fake_feat_content, fake_features = model.ContentEncoder(fake_img, cfg.MODEL.feat_layers)

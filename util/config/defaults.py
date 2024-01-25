@@ -29,9 +29,6 @@ _C.DATASET.num_domains = 8
 # maximum number of images per folder
 _C.DATASET.max_dataset_size = 200000
 # Maximum number of object boxes per image
-# enable random flip during training
-_C.DATASET.random_flip = True
-
 # -----------------------------------------------------------------------------
 # Model
 # -----------------------------------------------------------------------------
@@ -52,7 +49,7 @@ _C.MODEL.in_channels = 3
 _C.MODEL.fc_dim = 2048
 # feature layers for NCE loss
 _C.MODEL.feat_layers = [0, 4, 8]
-# number of patches for
+# number of patches for NCE loss
 _C.MODEL.num_patches = 256
 # patch size
 _C.MODEL.patch_size = 8
@@ -142,8 +139,7 @@ _C.TRAIN.workers = 20
 
 # weights for losses
 _C.TRAIN.w_GAN = 1.0
-_C.TRAIN.w_Recon = 10.0
-_C.TRAIN.w_StyleRef = 10.0
+_C.TRAIN.w_StyleRecon = 10.0
 _C.TRAIN.w_StyleDiv = 10.0
 _C.TRAIN.lambda_StyleDiv = 1.0
 _C.TRAIN.w_StyleDiv_iter = 100000
@@ -158,14 +154,6 @@ _C.TRAIN.n_bbox = 4
 _C.TRAIN.img_norm = 'imagenet'
 # frequency to save checkpoints 
 _C.TRAIN.save_epoch = 5
-# frequency to display training info
-_C.TRAIN.display_sample_iter = 500
-# frequency to save training images
-_C.TRAIN.image_save_iter = 1000
-# frequency to print training info on console
-_C.TRAIN.print_losses_iter = 100
-# frequency to display loss visualizations
-_C.TRAIN.display_losses_iter = 200
 # manual seed
 _C.TRAIN.seed = 304
 # use cuda
@@ -205,26 +193,34 @@ _C.TRAIN.PREPROCESS.grayscale = False
 # ------------------------------------------------------------------------------
 # Visualization
 # ------------------------------------------------------------------------------
-_C.VISDOM = CN()
+_C.VISUAL = CN()
 #-------------------------------------------------------------------------------
 # enable visualization using visdom
-_C.VISDOM.enabled = True
+_C.VISUAL.visdom = True
 # display size in visdom
-_C.VISDOM.display_winsize = 256
+_C.VISUAL.display_winsize = 256
 # number of columns to display in visdom
-_C.VISDOM.display_ncols = 4
+_C.VISUAL.display_ncols = 4
 # window id of the web display
-_C.VISDOM.display_id = -1
+_C.VISUAL.display_id = -1
 # visdom server
-_C.VISDOM.server = 'http://localhost'
+_C.VISUAL.server = 'http://localhost'
 # visdom port
-_C.VISDOM.port = 8097
+_C.VISUAL.port = 8097
 # name of the visdom workspace
-_C.VISDOM.env = 'main'
+_C.VISUAL.env = 'main'
 # frequency to save visualization results
-_C.VISDOM.save_results_freq = 1000
+_C.VISUAL.save_results_freq = 1000
 # save intermediate training results to disk as html
-_C.VISDOM.save_intermediate = True
+_C.VISUAL.save_intermediate = True
+# frequency to display training info
+_C.VISUAL.display_sample_iter = 500
+# frequency to save training images
+_C.VISUAL.image_save_iter = 1000
+# frequency to print training info on console
+_C.VISUAL.print_losses_iter = 100
+# frequency to display loss visualizations
+_C.VISUAL.display_losses_iter = 200
 
 # -----------------------------------------------------------------------------
 # Validation

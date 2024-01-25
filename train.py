@@ -1,31 +1,18 @@
 import os
-import pdb
-import time
+
 import argparse
 import logging
 
 import yaml
 # from dotmap import DotMap
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from tqdm import tqdm
 from model import StarFormer
 
-import utils
 import initialize
-import loss
 from visualizer import Visualizer
 # from collections import OrderedDict
-from data import create_dataset
 from util.config import cfg
-from munch import Munch
-from data_loader import MultiDomainDataset, TrainProvider, RefProvider, get_train_loader, get_ref_loader
-from torchvision.utils import draw_bounding_boxes
-from PIL import Image
-# TRAIN = 1
-# EVAL = 0
+from data_loader import  get_train_loader
 
 parser = argparse.ArgumentParser(description='arguments yaml load')
 
@@ -113,7 +100,7 @@ if __name__ == "__main__":
         normalize=cfg.TRAIN.img_norm
     )
 
-    visualizer = Visualizer(cfg.MODEL.name, cfg.TRAIN.log_path, cfg.VISDOM, cfg.DATASET.target_domain_names)
+    visualizer = Visualizer(cfg.MODEL.name, cfg.TRAIN.log_path, cfg.VISUAL, cfg.DATASET.target_domain_names)
 
     model = StarFormer(cfg=cfg, device=device, mode='train')
    

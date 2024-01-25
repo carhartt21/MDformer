@@ -18,7 +18,7 @@ class CheckpointIO(object):
         logging.info(f'>> Saving checkpoint to {fname}')
         outdict = {}
         for name, module in self.module_dict.items():
-            logging.info(f'>> Saving {module}')
+            logging.info(f'>> Saving {name}')
             if self.data_parallel:
                 outdict[name] = module.module.state_dict()
             else:

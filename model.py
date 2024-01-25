@@ -229,30 +229,26 @@ class StarFormer(nn.Module):
                 total_iters = epoch * cfg.TRAIN.epoch_iters + i
 
                 # print info to visdom
-                if (cfg.VISDOM.enabled):
-                    if (total_iters % cfg.TRAIN.display_losses_iter) == 0:
+                if (cfg.VISUAL.visdom):
+                    if (total_iters % cfg.VISUAL.display_losses_iter) == 0:
                         visualizer.plot_current_losses(epoch, float(i) / len(loader),
                                                     {k: v.item() for k, v in losses.items()})
-                        if (total_iters % cfg.TRAIN.display_sample_iter) == 0:
-                            current_visuals = {'input_img': inputs.img_src, 'generated_img_lat': fake_image_lat,
-                                            'reference_img': refs.img_ref, 'generated_img_ref': fake_image_ref}
-                            current_domains = {'source_domain': inputs.d_src, 'target_domain': refs.d_trg}
-                            visualizer.display_current_samples(current_visuals, current_domains, epoch,
-                                                            (total_iters % cfg.TRAIN.image_save_iter == 0))
+                    if (total_iters % cfg.VISUAL.display_sample_iter) == 0:
+                        current_visuals = {'input_img': inputs.img_src, 'generated_img_lat': fake_image_lat,
+                                        'reference_img': refs.img_ref, 'generated_img_ref': fake_image_ref}
+                        current_domains = {'source_domain': inputs.d_src, 'target_domain': refs.d_trg}
+                        visualizer.display_current_samples(current_visuals, current_domains, epoch,
+                                                        (total_iters % cfg.VISUAL.image_save_iter == 0))
                 # print info to console
-                if (total_iters % cfg.TRAIN.print_losses_iter) == 0:
+                if (total_iters % cfg.VISUAL.print_losses_iter) == 0:
                     visualizer.print_current_losses(epoch + 1, i, losses, time.time() - iter_date_time)
                 # save intermediate results
-                if (cfg.VISDOM.save_intermediate and total_iters % cfg.VISDOM.save_results_freq == 0):
+                if (cfg.VISUAL.save_intermediate and total_iters % cfg.VISUAL.save_results_freq == 0):
                     logging.info('>>>> Saving intermediate results to {}/{}'.format(cfg.TRAIN.log_path, cfg.MODEL.name))
-                    utils.save_image_from_tensor(inputs.img_src, 
-                                                filename='{}/{}/{}_source_image.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
-                                                normalize=cfg.TRAIN.img_norm)
-                    utils.save_image_from_tensor(fake_image_lat,
-                                                filename='{}/{}/{}_fake_lat.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
-                                                normalize=cfg.TRAIN.img_norm)
-                    utils.save_image_from_tensor(fake_image_ref,
-                                                filename='{}/{}/{}_fake_ref.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
+                    domain_imgs = utils.domain_to_image_tensor(refs.d_trg, cfg.DATASET.target_domain_names, cfg.MODEL.img_size)
+                    output = torch.stack([inputs.img_src, domain_imgs, fake_image_lat, refs.img_ref, fake_image_ref], dim=0).flatten(0, 1)
+                    utils.save_image_from_tensor(output, 
+                                                filename='{}/{}/{}_results.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
                                                 normalize=cfg.TRAIN.img_norm)
                     if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0:
                         bbox = (inputs.bbox[0, :, 1:].cpu()*cfg.MODEL.img_size[0]).to(torch.int)
