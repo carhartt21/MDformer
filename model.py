@@ -226,24 +226,25 @@ class StarFormer(nn.Module):
                 # decay weight for diversity sensitive loss
                 if cfg.TRAIN.lambda_StyleDiv > 0:
                     cfg.TRAIN.lambda_StyleDiv -= (initial_lambda_ds / cfg.TRAIN.w_StyleDiv_iter)
+                
                 total_iters = epoch * cfg.TRAIN.epoch_iters + i
 
                 # print info to visdom
                 if (cfg.VISUAL.visdom):
-                    if (total_iters % cfg.VISUAL.display_losses_iter) == 0:
+                    if (i % cfg.VISUAL.display_losses_iter) == 0:
                         visualizer.plot_current_losses(epoch, float(i) / len(loader),
                                                     {k: v.item() for k, v in losses.items()})
-                    if (total_iters % cfg.VISUAL.display_sample_iter) == 0:
+                    if (i % cfg.VISUAL.display_sample_iter) == 0:
                         current_visuals = {'input_img': inputs.img_src, 'generated_img_lat': fake_image_lat,
                                         'reference_img': refs.img_ref, 'generated_img_ref': fake_image_ref}
                         current_domains = {'source_domain': inputs.d_src, 'target_domain': refs.d_trg}
                         visualizer.display_current_samples(current_visuals, current_domains, epoch,
                                                         (total_iters % cfg.VISUAL.image_save_iter == 0))
                 # print info to console
-                if (total_iters % cfg.VISUAL.print_losses_iter) == 0:
+                if (i % cfg.VISUAL.print_losses_iter) == 0:
                     visualizer.print_current_losses(epoch + 1, i, losses, time.time() - iter_date_time)
                 # save intermediate results
-                if (cfg.VISUAL.save_intermediate and total_iters % cfg.VISUAL.save_results_freq == 0):
+                if (cfg.VISUAL.save_intermediate and i % cfg.VISUAL.save_results_freq == 0):
                     logging.info('>>>> Saving intermediate results to {}/{}'.format(cfg.TRAIN.log_path, cfg.MODEL.name))
                     domain_imgs = utils.domain_to_image_tensor(refs.d_trg, cfg.DATASET.target_domain_names, cfg.MODEL.img_size)
                     output = torch.stack([inputs.img_src, domain_imgs, fake_image_lat, refs.img_ref, fake_image_ref], dim=0).flatten(0, 1)
