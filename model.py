@@ -228,7 +228,7 @@ class StarFormer(nn.Module):
                     cfg.TRAIN.lambda_StyleDiv -= (initial_lambda_ds / cfg.TRAIN.w_StyleDiv_iter)
                 total_iters = epoch * cfg.TRAIN.epoch_iters + i
 
-
+                # print info to visdom
                 if (cfg.VISDOM.enabled):
                     if (total_iters % cfg.TRAIN.display_losses_iter) == 0:
                         visualizer.plot_current_losses(epoch, float(i) / len(loader),
@@ -239,29 +239,31 @@ class StarFormer(nn.Module):
                             current_domains = {'source_domain': inputs.d_src, 'target_domain': refs.d_trg}
                             visualizer.display_current_samples(current_visuals, current_domains, epoch,
                                                             (total_iters % cfg.TRAIN.image_save_iter == 0))
-                    if (total_iters % cfg.TRAIN.print_losses_iter) == 0:
-                        visualizer.print_current_losses(epoch + 1, i, losses, time.time() - iter_date_time)
-                    if (cfg.VISDOM.save_intermediate and total_iters % cfg.VISDOM.save_results_freq == 0):
-                        logging.info('>>>> Saving intermediate results to {}/{}'.format(cfg.TRAIN.log_path, cfg.MODEL.name))
-                        utils.save_image_from_tensor(inputs.img_src, 
-                                                    filename='{}/{}/{}_source_image.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
-                                                    normalize=cfg.TRAIN.img_norm)
-                        utils.save_image_from_tensor(fake_image_lat,
-                                                    filename='{}/{}/{}_fake_lat.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
-                                                    normalize=cfg.TRAIN.img_norm)
-                        utils.save_image_from_tensor(fake_image_ref,
-                                                    filename='{}/{}/{}_fake_ref.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
-                                                    normalize=cfg.TRAIN.img_norm)
-                        if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0:
-                            bbox = (inputs.bbox[0, :, 1:].cpu()*cfg.MODEL.img_size[0]).to(torch.int)
-                            img = utils.denormalize(inputs.img_src[0].unsqueeze(dim=0).cpu())
-                            img = img.squeeze().mul(255).add_(0.5).clamp_(0, 255).to(torch.uint8)
-                            img = draw_bounding_boxes(img, bbox).permute(1, 2, 0).numpy()
-                            img = Image.fromarray(img)
-                            img.save('{}/{}/source_image_with_bb_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)))
-                    # Save model & optimizer and example images
-                if epoch > 0 and (epoch % cfg.TRAIN.save_epoch) == 0:
-                    self._save_checkpoint(epoch=epoch)
+                # print info to console
+                if (total_iters % cfg.TRAIN.print_losses_iter) == 0:
+                    visualizer.print_current_losses(epoch + 1, i, losses, time.time() - iter_date_time)
+                # save intermediate results
+                if (cfg.VISDOM.save_intermediate and total_iters % cfg.VISDOM.save_results_freq == 0):
+                    logging.info('>>>> Saving intermediate results to {}/{}'.format(cfg.TRAIN.log_path, cfg.MODEL.name))
+                    utils.save_image_from_tensor(inputs.img_src, 
+                                                filename='{}/{}/{}_source_image.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
+                                                normalize=cfg.TRAIN.img_norm)
+                    utils.save_image_from_tensor(fake_image_lat,
+                                                filename='{}/{}/{}_fake_lat.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
+                                                normalize=cfg.TRAIN.img_norm)
+                    utils.save_image_from_tensor(fake_image_ref,
+                                                filename='{}/{}/{}_fake_ref.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)),
+                                                normalize=cfg.TRAIN.img_norm)
+                    if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0:
+                        bbox = (inputs.bbox[0, :, 1:].cpu()*cfg.MODEL.img_size[0]).to(torch.int)
+                        img = utils.denormalize(inputs.img_src[0].unsqueeze(dim=0).cpu())
+                        img = img.squeeze().mul(255).add_(0.5).clamp_(0, 255).to(torch.uint8)
+                        img = draw_bounding_boxes(img, bbox).permute(1, 2, 0).numpy()
+                        img = Image.fromarray(img)
+                        img.save('{}/{}/source_image_with_bb_{}.jpg'.format(cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)))
+            # Save model & optimizer and example images
+            if epoch > 0 and (epoch % cfg.TRAIN.save_epoch) == 0:
+                self._save_checkpoint(epoch=epoch)
 
 
                 # generate images for debugging
