@@ -19,7 +19,7 @@ from einops import repeat, rearrange
 
 
 ##################################### Visualize ##################################### 
-def denormalize(x, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
+def denormalize(x, mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]):
     # 3, H, W, B
     ten = x.clone().permute(1, 2, 3, 0)
     for t, m, s in zip(ten, mean, std):
@@ -477,7 +477,7 @@ def tensor2im(input_image, imtype=np.uint8):
     except RuntimeError:
         return np.ones_like(image_numpy.transpose([2, 0, 1])) * 255
 
-def save_image_from_tensor(x, filename, normalize=''):
+def save_image_from_tensor(x, filename, normalize='default'):
     _x = x.clone().detach()
     if normalize == 'imagenet':
         mean = torch.Tensor([0.485, 0.456, 0.406])

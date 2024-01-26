@@ -151,7 +151,7 @@ _C.TRAIN.w_l_reg = 1.0
 # maximum number of bounding boxes
 _C.TRAIN.n_bbox = 4
 # image normalization type one of imagenet, default, none
-_C.TRAIN.img_norm = 'imagenet'
+_C.TRAIN.img_norm = 'default'
 # frequency to save checkpoints 
 _C.TRAIN.save_epoch = 5
 # manual seed
