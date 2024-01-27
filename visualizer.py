@@ -203,17 +203,22 @@ class Visualizer():
         """
         if len(losses) == 0:
             return
+        _losses = {}
 
-        plot_name = '_'.join(list(losses.keys()))
+        for l, m in losses.items():
+            for k, v in m.items():
+                _losses[f'{l} - {k}'] = v.cpu().detach()
+
+        plot_name = '_'.join(list(_losses.keys()))
 
         if plot_name not in self.plot_data:
-            self.plot_data[plot_name] = {'X': [], 'Y': [], 'legend': list(losses.keys())}
+            self.plot_data[plot_name] = {'X': [], 'Y': [], 'legend': list(_losses.keys())}
 
         plot_data = self.plot_data[plot_name]
         plot_id = list(self.plot_data.keys()).index(plot_name)
 
         plot_data['X'].append(epoch + counter_ratio)
-        plot_data['Y'].append([losses[k] for k in plot_data['legend']])
+        plot_data['Y'].append([_losses[k] for k in plot_data['legend']])
         try:
             self.vis.line(
                 X=np.stack([np.array(plot_data['X'])] * len(plot_data['legend']), 1),
@@ -239,8 +244,10 @@ class Visualizer():
         """
         message = f'===== {self.name} ===== \n'
         message += f'>> Epoch: {epoch}, iters: {iters}, time: {t_comp:.2f}\n'
-        for k, v in losses.items():
-            message += f'>>>> {k}: {v:.3f} \n'
+        for l, m in losses.items():
+            message += f'>>>> == {l} == \n'
+            for k, v in m.items():
+                message += f'>>>> {k}: {v:.3f} \n'
 
         logging.info('{}'.format(message))  # print the message
         with open(self.log_name, "a") as log_file:

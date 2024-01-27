@@ -87,7 +87,7 @@ class Transformer_Aggregator(nn.Module):
         
         # Semantic Embedding
         self.sem_embed = blocks.SemanticEmbedding(num_sem_classes=num_sem_classes, embed_dim=self.sem_embed_C)
-        self.cls_token = nn.Parameter(torch.randn(1, 1, self.patch_embed_C+self.sem_embed_C))
+        # self.cls_token = nn.Parameter(torch.randn(1, 1, self.patch_embed_C+self.sem_embed_C))
 
         # Positional Embedding
         self.total_embed_C = patch_embed_C + sem_embed_C
@@ -114,8 +114,8 @@ class Transformer_Aggregator(nn.Module):
         self.pos_embed = F.interpolate(pos_embed.permute(0, 3, 1, 2), size=((input_size//patch_size), input_size//patch_size), mode='bilinear').flatten(2).transpose(-1, -2)
         
         # Add empty embedding for cls_token
-        cls_embed = torch.zeros(1, 1, self.total_embed_C)
-        self.pos_embed = torch.cat((cls_embed, self.pos_embed), dim=1)
+        # cls_embed = torch.zeros(1, 1, self.total_embed_C)
+        # self.pos_embed = torch.cat((cls_embed, self.pos_embed), dim=1)
 
         # Transformer
         self.transformer = AdaIn_Transformer(dim=self.total_embed_C, depth=depth, heads=heads, dim_head=feat_C, mlp_dim=mlp_dim, dropout=0., vis= self.vis)
@@ -235,7 +235,7 @@ class Transformer_Aggregator(nn.Module):
         patch_embed_x = self.patch_embed(x)
 
         # Extract class tokens
-        cls_token = repeat(self.cls_token, '1 n d -> b n d', b=(x.shape[0]))
+        # cls_token = repeat(self.cls_token, '1 n d -> b n d', b=(x.shape[0]))
 
         # Add semantic embeddings
         # if sem_embed:
@@ -247,7 +247,7 @@ class Transformer_Aggregator(nn.Module):
         #     sem_labels = torch.cat([sem_labels, bbox_info[:,:,0]], dim=1)
         patch_embed_x = self.sem_embed(patch_embed_x, sem_labels)        
 
-        patch_embed_x = torch.cat((cls_token, patch_embed_x), dim=1)
+        # patch_embed_x = torch.cat((cls_token, patch_embed_x), dim=1)
 
         patch_embed_x = patch_embed_x + self.pos_embed.to(x.device)
 

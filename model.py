@@ -147,25 +147,25 @@ class StarFormer(nn.Module):
                 # train the discriminator
                 #----------------------------------------------------------
                 # from latent vector
-                total_D_loss, D_losses = loss.compute_D_loss(inputs=inputs, 
+                total_D_loss, D_losses_lat = loss.compute_D_loss(inputs=inputs, 
                     refs=refs,  
                     model=model,
                     criterions=criterions,
                     cfg=cfg,
                     from_lat=True)
                 # utils.set_requires_grad(model.Discriminator.module, True)
-                self._reset_grad()
-                total_D_loss.backward()
-                optimizer.Discriminator.step()                
+                # self._reset_grad()
+                # total_D_loss.backward()
+                # optimizer.Discriminator.step()                
                 
                 #from reference image
-                total_D_loss, D_losses = loss.compute_D_loss(inputs=inputs, 
+                D_loss, D_losses_ref = loss.compute_D_loss(inputs=inputs, 
                     refs=refs,  
                     model=model,
                     criterions=criterions,
                     cfg=cfg, 
                     from_lat=False)                
-                
+                total_D_loss += D_loss
                 self._reset_grad()
                 total_D_loss.backward()
                 optimizer.Discriminator.step()
@@ -174,7 +174,7 @@ class StarFormer(nn.Module):
                 #---------------------------------------------------------
                 # from latent vector
 
-                total_G_loss, G_losses, fake_image_lat, recon_img = loss.compute_G_loss(
+                G_loss, G_losses_lat, fake_image_lat, recon_img = loss.compute_G_loss(
                     model=model,
                     inputs=inputs,
                     refs=refs,
@@ -183,7 +183,7 @@ class StarFormer(nn.Module):
                     from_lat=True)
                 # utils.set_requires_grad(model.Discriminator.module, False)
                 self._reset_grad()
-                total_G_loss.backward()
+                G_loss.backward()
 
                 optimizer.ContentEncoder.step()
                 optimizer.Generator.step()
@@ -195,7 +195,7 @@ class StarFormer(nn.Module):
                     optimizer.MLPHead.step()                  
 
                 # from reference image
-                total_G_loss, G_losses, fake_image_ref, recon_img = loss.compute_G_loss(
+                G_loss, G_losses_ref, fake_image_ref, recon_img = loss.compute_G_loss(
                     model=model,
                     inputs=inputs,
                     refs=refs,
@@ -204,7 +204,7 @@ class StarFormer(nn.Module):
                     from_lat=False)
                 
                 self._reset_grad()  
-                total_G_loss.backward()
+                G_loss.backward()
                 optimizer.ContentEncoder.step()
                 optimizer.Generator.step()
                 optimizer.Transformer.step()
@@ -219,9 +219,11 @@ class StarFormer(nn.Module):
                 moving_average(model.MappingNetwork, model_ema.MappingNetwork, beta=0.999)
                 moving_average(model.StyleEncoder, model_ema.StyleEncoder, beta=0.999)
 
-                losses = {}
-                losses.update(G_losses)
-                losses.update(D_losses)
+                losses = Munch()
+                losses.D_lat = D_losses_lat
+                losses.D_ref = D_losses_ref
+                losses.G_lat = G_losses_lat
+                losses.G_ref = G_losses_ref
 
                 # decay weight for diversity sensitive loss
                 if cfg.TRAIN.lambda_StyleDiv > 0:
@@ -233,7 +235,7 @@ class StarFormer(nn.Module):
                 if (cfg.VISUAL.visdom):
                     if (i % cfg.VISUAL.display_losses_iter) == 0:
                         visualizer.plot_current_losses(epoch, float(i) / len(loader),
-                                                    {k: v.item() for k, v in losses.items()})
+                                                    losses=losses)
                     if (i % cfg.VISUAL.display_sample_iter) == 0:
                         current_visuals = {'input_img': inputs.img_src, 'generated_img_lat': fake_image_lat,
                                         'reference_img': refs.img_ref, 'generated_img_ref': fake_image_ref}
@@ -279,21 +281,21 @@ class StarFormer(nn.Module):
 
     @torch.no_grad()
     def sample(self, loaders):
-        args = self.args
+        cfg = self.cfg
         model_ema = self.model_ema
-        os.makedirs(args.result_dir, exist_ok=True)
-        self._load_checkpoint(args.resume_iter)
+        os.makedirs(cfg.result_dir, exist_ok=True)
+        self._load_checkpoint(cfg.TEST.load_epoch)
 
-        src = next(TestProvider(loaders.src, None, args.latent_dim, 'test'))
-        ref = next(TestProvider(loaders.ref, None, args.latent_dim, 'test'))
+        src = next(TestProvider(loaders.src, None, cfg.MODEL.latent_dim, 'test'))
+        ref = next(TestProvider(loaders.ref, None, cfg.MODEL.latent_dim, 'test'))
 
-        fname = ospj(args.result_dir, 'reference.jpg')
+        fname = ospj(cfg.TEST.result_dir, 'reference.jpg')
         print('Working on {}...'.format(fname))
-        utils.translate_using_reference(model_ema, args, src.x, ref.x, ref.y, fname)
+        utils.translate_using_reference(model_ema, cfg, src.x, ref.x, ref.y, fname)
 
-        fname = ospj(args.result_dir, 'video_ref.mp4')
-        print('Working on {}...'.format(fname))
-        utils.video_ref(model_ema, args, src.x, ref.x, ref.y, fname)
+        # fname = ospj(args.result_dir, 'video_ref.mp4')
+        # print('Working on {}...'.format(fname))
+        # utils.video_ref(model_ema, args, src.x, ref.x, ref.y, fname)
 
     @torch.no_grad()
     def evaluate(self):

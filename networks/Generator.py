@@ -10,12 +10,12 @@ class Generator(nn.Module):
         super(Generator, self).__init__()
         
 
-        self.inv_patch_embed = nn.Sequential(blocks.Transpose(1, 2),
+        self.inv_embed = nn.Sequential(blocks.Transpose(1, 2),
                                     nn.Unflatten(2, torch.Size([input_size // patch_size, input_size // patch_size])),
                                     nn.ConvTranspose2d(in_channels=embed_C, out_channels=feat_C,
                                         kernel_size=patch_size, stride=patch_size, padding=0,
                                         bias=True, dilation=1, groups=1))
-        self.inv_patch_embed_box = nn.Sequential(
+        self.inv_embed_box = nn.Sequential(
                                     nn.ConvTranspose2d(in_channels=embed_C, out_channels=feat_C,
                                     kernel_size=patch_size, stride=patch_size, padding=0,
                                     bias=True, dilation=1, groups=1)
@@ -40,9 +40,9 @@ class Generator(nn.Module):
         
     def forward(self, x, box_info=None):
         # remove the first token [<cls>]
-        x = x[:, 1:, :]
+        # x = x[:, 1:, :]
         if box_info==None:
-            out = self.model(self.inv_patch_embed(x))
+            out = self.model(self.inv_embed(x))
         else:
             B_i, N_i, C_i = x.shape
 
@@ -57,6 +57,6 @@ class Generator(nn.Module):
                     out_box_list.append(out_box_filtered) 
             
             out_box = x.reshape(B_i*N_i,-1).unsqueeze(2).unsqueeze(3)
-            out = self.model(self.inv_patch_embed_box(out_box))
+            out = self.model(self.inv_embed_box(out_box))
 
         return out
