@@ -3,33 +3,31 @@ TRAIN:
   use_cuda: True
   seed: 21
   start_epoch: 0 # if resume, set this as a number
-  end_epoch: 200 # number of epochs of training
+  end_epoch: 100 # number of epochs of training
   #contnue here
-  batch_size_per_gpu: 4 # input batch size
-  num_workers: 5 # # threads for loading data
-  lr: 2e-4 # initial learning rate for adam
+  batch_size_per_gpu: 8 # input batch size
+  num_workers: 0 # # threads for loading data
+  lr: 2e-4 # initial global learning rate
+  lr_MN: 1e-6 # initial learning rate for the mapping network
   optim_beta: [0.5, 0.999] # momentum terms of adam
   lr_scheduler: False
   scheduler_step_size: 150
-  w_GAN: 1.0 # weight for GAN loss
-  w_Recon: 1.0 # weight for recon loss
-  w_Style: 1.0 # weight for style loss
+  w_GAN: 2.0 # weight for GAN loss
+  w_StyleRecon: 5.0 # weight for style recon loss
+  w_StyleDiv: 5.0 # weight for style loss
   w_NCE: 1.0 # weight for NCE loss
   w_Instance_NCE: 1.0 # weight for instance NCE loss
-  w_Cycle : 1.0
-  w_DClass : 1.0  
-  w_StyleDiv : 0.0
-  display_sample_iter: 1 # frequency of displaying the latest results in visdom
-  display_losses_iter: 1 # frequency of displaying losses in visdom
+  n_bbox: 4 # # box
+  w_Cycle : 2.0
+  
   save_epoch: 5 # frequency of saving checkpoints at the end of epochs
-  image_save_iter: 200 # frequency of saving the latest training images
-  print_losses_iter: 1 # frequency of showing training results on console
+
   distributed: False # if true use multiprocess distributed training
   gpu_ids: [0] # gpu ids: e.g. 0, 1, 2. use -1 for CPU
   epoch_iters: 8000 # number of iterations per epoch
 
 MODEL:
-  name: 'MDformer' # name of the experiment. It decides where to store samples and models
+  name: 'StarFormer' # name of the experiment. It decides where to store samples and models
   load_weight : False # if training from scratch, set this as False
   load_optimizer : False # if training from scratch, set this as False
   weight_path : None # if training from scratch, set this as None
@@ -46,7 +44,7 @@ MODEL:
   # Latent code dimension
   latent_dim : 16
   # dimension of the semantic embedding
-  sem_embed_dim : 64
+  sem_embed_dim : 32
   # Mapping Network hidden dimension
   # number of content channels
   content_dim : 256
@@ -56,6 +54,8 @@ MODEL:
   n_generator_filters : 64
   # number of discriminator filters
   n_discriminator_filters : 64
+  # hidden dimension in the mapping network
+  hidden_dim : 512
   TRANSFORMER:
     # number of input channels of the transformer
     embed_C : 1024
@@ -64,7 +64,7 @@ MODEL:
     # number of transformer layers
     depth : 6
     # number of heads in each transformer layer
-    heads : 4
+    heads : 8
     # dimension of each head
     mlp_dim : 4352
 
@@ -73,19 +73,22 @@ MODEL:
 
 DATASET:
   target_domain_names: ['summer', 'winter', 'spring', 'autumn'] # domains to be used for training
-  ref_path: '/media/chge7185/HDD1/datasets/MDformer/ref_images' # path of reference images
-  train_list: 'config/train_list.txt' # path of input images
-  n_bbox: -1 # # box
+  ref_dir: '/mnt/Data/chge7185/datasets/StarFormer/ref_images' # path of reference images
+  train_dir: '/mnt/Data/chge7185/datasets/StarFormer/images/' # path of input images
   max_dataset_size: -1 # Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded. -1 : no maximum number of samples
   
 
-VISDOM:
-  enabled: True # visualize the training process using visdom
+VISUAL:
+  visdom: True # visualize the training process using visdom
+  display_sample_iter: 1 # frequency of displaying the latest results in visdom
+  display_losses_iter: 1 # frequency of displaying losses in visdom  
   display_winsize: 256 # visdom display size
+  image_save_iter: 1 # frequency of saving the latest training images
+  print_losses_iter: 1 # frequency of showing training results on console  
   display_ncols:  4 # if positive, display all images in a single visdom web panel with certain number of images per row.
   display_id: 1 # window id of the web display.
   server: "http://localhost" # visdom server of the web display
   env:  'main' # visdom display environment name (default is "main")
-  port: 8098 # visdom port of the web display
-  save_epoch_freq: 1000 # frequency of saving training results to html
-  save_intermediate: False # do not save intermediate training results to [opt.checkpoints_dir]/[opt.name]/web/
+  port: 8099 # visdom port of the web display
+  save_results_freq: 1 # frequency of saving training results to html
+  save_intermediate: True # do not save intermediate training results to [opt.checkpoints_dir]/[opt.name]/web/

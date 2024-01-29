@@ -1,18 +1,18 @@
-from collections import OrderedDict
 import os
-from data import create_dataset
-from utils import save_image, translate_using_latent
-from util import html
-import utils
-import logging
+
 import argparse
+import logging
+
+import yaml
+# from dotmap import DotMap
 import torch
+from model import StarFormer
+
 import initialize
 from visualizer import Visualizer
-from data_loader import TestProvider, get_test_loader
-
+# from collections import OrderedDict
 from util.config import cfg
-from data_loader import MultiDomainDataset, InputProvider, RefProvider, get_train_loader, get_ref_loader
+from data_loader import  get_test_loader
 
 # Configure logging
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -40,61 +40,61 @@ if __name__ == "__main__":
         default=None,
         nargs=argparse.REMAINDER,
     )
-    args = parser.parse_args()   
-    
+    args = parser.parse_args()
+
     cfg.merge_from_file(args.cfg)
     cfg.merge_from_list(args.opts)
-    # if os.path.exists(os.path.join(cfg.weight_path, 'config.yaml')):
-        # cfg.merge_from_file(os.path.join(cfg.weight_path, 'config.yaml'))
-    device = torch.device('cuda:{}'.format(cfg.TRAIN.gpu_ids[0])) if cfg.TRAIN.gpu_ids else torch.device('cpu')
-    # opt = TestOptions().parse()  # get test options
-    # hard-code some parameters for test
-    cfg.TEST.num_threads = 0   # test code only supports num_threads = 1
-    cfg.TEST.batch_size = 1    # test code only supports batch_size = 1
-    cfg.TEST.shuffle = False # disable data shuffling; comment this line if results on randomly chosen images are needed.
-    # cfg.TESTno_flip = True    # no flip; comment this line if results on flipped images are needed.
-    cfg.VISDOM.display_id = -1   # no visdom display; the test code saves the results to a HTML file.
 
+    logger.info('===== Loaded configuration =====')
+    logger.info(f'>> Source: {args.cfg}')
+    logger.info(yaml.dump(cfg))
+    # for k, v in cfg.items():
+    #     logger.info('>> {} : {}'.format(k, v))
+    log_path_model = os.path.join(cfg.TRAIN.log_path, cfg.MODEL.name)
+    if not os.path.isdir(log_path_model):
+        os.makedirs(log_path_model)
+    with open(os.path.join(log_path_model, f'config_{cfg.MODEL.name}.yaml'), 'w') as f:
+        f.write(f'{cfg}')
+
+    device = torch.device(f'cuda:{cfg.TRAIN.gpu_ids[0]}' if cfg.TRAIN.gpu_ids else 'cpu')
+
+    # data loader
     num_domains = len(cfg.DATASET.target_domain_names)
 
-    # create a webpage for viewing the results
-    web_dir = os.path.join(cfg.TEST.result, cfg.MODEL.name, '{}'.format(cfg.TEST.load_epoch))  # define the website directory
-    print('creating web directory', web_dir)
-    webpage = html.HTML(web_dir, 'Experiment = %s Epoch = %s' % (cfg.MODEL.name, cfg.TEST.load_epoch))
-    # TODO continue here add model M
-    model_G = initialize.build_model(cfg=cfg, device=device, num_domains=num_domains, mode='test')
-    os.makedirs(cfg.TEST.result, exist_ok=True)
-    if cfg.MODEL.weight_path is not None:
-        logging.info("+ Loading Network weights from {}".format(cfg.MODEL.weight_path)) 
-        for key in model_G.keys():
-            file = os.path.join(cfg.MODEL.weight_path, f'{key}.pth')
-            if os.path.isfile(file):
-                logging.info("++ Success load weight {}".format(key))
-                model_load_dict = torch.load(file, map_location=device)
-                keys = model_load_dict.keys()
-                values = model_load_dict.values()
+     # create a dataset given opt.dataset_mode and other options
 
-                new_keys = []
-                for i, mykey in enumerate(keys):
-                    new_key = mykey[14:] #REMOVE 'module.'
-                    new_keys.append(new_key)
-                new_dict = OrderedDict(list(zip(new_keys,values)))
-                model_G[key].load_state_dict(new_dict)
-            else:
-                logging.info("++ Does not exist {}".format(file))
-    else:
-        logging.info("+ No weight loaded: Couldn't find weights under {}".format(cfg.MODEL.weight_path))
-# Set eval mode for every module in model_G
-for _model in model_G.values():
-    _model.eval().to(device)
+    test_list = []
+    for td in cfg.DATASET.target_domain_names:
+        if os.path.isdir(os.path.join(cfg.DATASET.test_dir, td)):
+            test_list.append(os.path.join(cfg.DATASET.test_dir, td))
+        else:
+            logger.warning(f'{os.path.join(cfg.DATASET.test_dir, td)} is not a directory')
+    assert len(test_list) > 0, f'Target domains {cfg.DATASET.target_domain_names} not found in train directory {cfg.DATASET.train_dir}'
+    if len(test_list) < num_domains:
+        logger.warning(f'Number of matching folders in the directory ({len(test_list)}) is less than number of domains {num_domains}.')
 
-test_loader = get_test_loader(test_dir=cfg.TEST.dir, img_size=cfg.MODEL.img_size, batch_size=cfg.TEST.batch_size, imagenet_normalize=True, shuffle=False)
-test_provider = TestProvider(test_loader, 'test')
-for i, data in enumerate(test_loader):
-    if i >= cfg.TEST.num_images:  # only apply our model to opt.num_test images.
-        break
-    sample = next(test_provider)
-    logging.info("Processing image {}/{}".format(i, test_loader.__len__()))
-    for d_trg in cfg.TEST.target_domains:
-        d_trg = utils.domain_to_onehot(d_trg, cfg.TEST.target_domains)
-        translate_using_latent(model_G=model_G, cfg=cfg, input=sample, d_trg=d_trg, psi=cfg.TEST.psi, filename='output.png', latent_dim=cfg.MODEL.latent_dim, feat_layers=cfg.MODEL.feat_layers)
+    ref_list = []
+    for td in cfg.DATASET.target_domain_names:
+        if os.path.isdir(os.path.join(cfg.DATASET.ref_dir, td)):
+            ref_list.append(os.path.join(cfg.DATASET.ref_dir, td))
+        else:
+            logger.warning(f'{os.path.join(cfg.DATASET.ref_dir, td)} is not a directory')
+    assert len(ref_list) > 0, f'Target domains {cfg.DATASET.target_domain_names} not found in reference directory {cfg.DATASET.ref_dir}'
+    if len(ref_list) < num_domains:
+        logger.warning(f'Number of matching folders in the directory {len(ref_list)} is less than number of domains {num_domains}.')
+
+
+    data_loader = get_test_loader(
+        img_size=cfg.MODEL.img_size,
+        batch_size=cfg.TRAIN.batch_size_per_gpu,
+        test_list=test_list,
+        ref_list=ref_list,
+        target_domain_names=cfg.DATASET.target_domain_names,
+        normalize=cfg.TRAIN.img_norm
+    )
+
+    visualizer = Visualizer(cfg.MODEL.name, cfg.TRAIN.log_path, cfg.VISUAL, cfg.DATASET.target_domain_names)
+
+    model = StarFormer(cfg=cfg, device=device, mode='test')
+   
+    model.test(data_loader, visualizer=visualizer)

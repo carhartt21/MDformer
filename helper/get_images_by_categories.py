@@ -23,7 +23,7 @@ import torch
 # target_attributes = ['daylight', 'sunrisesunset', 'dawndusk', 'night', 'spring', 'summer', 'autumn', 'winter', 'sunny', 'snow', 'rain', 'fog']
 target_attributes = ['summer', 'autumn', 'winter', 'spring']
 
-threshold = 0.5
+threshold = 0.95
 
 
 def find_recursive(root_dir, ext='.jpg', names_only=False):
@@ -58,7 +58,7 @@ def sort_images_by_label(input_path):
             image_name = image_name.replace('png', 'jpg')
             # print(path.join(image_path, image_name))
             if not path.isfile(path.join(image_path, image_name)):
-                # print('File {} not found'.format(str(image_path) + '/'+ image_name))
+                # print('File {} not found'.format(str(image_path) + '/'>> image_name))
                 return
         # parent, name = str(image_path.parent), image_path.name
         # domain_path = os.path.join(parent.replace('domain', 'domain_labels'), 
@@ -176,6 +176,7 @@ if __name__ == '__main__':
     if path.isdir(args.input):
         print(args.input)
         files = find_recursive(args.input, ext='.png')
+        files += find_recursive(args.input, ext='.jpg')
         assert len(files), "Exception: files should be a path to image csv file or directory."
         print('Found {} files'.format(len(files)))
         # sort_images_by_label(files[223])

@@ -1,2 +1,1 @@
-/media/chge7185/HDD1/datasets/MDformer/images/ADEout
-/media/chge7185/HDD1/datasets/MDformer/images/mapillary
+/mnt/Data/chge7185/datasets/StarFormer/images/ADEout

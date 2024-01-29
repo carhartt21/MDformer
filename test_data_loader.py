@@ -1,4 +1,4 @@
-from data_loader import MultiDomainDataset, InputProvider, get_train_loader, get_ref_loader, RefProvider
+from data_loader import MultiDomainDataset, TrainProvider, get_train_loader, get_ref_loader, RefProvider
 from PIL import Image
 from PIL import Image, ImageDraw
 import torch
@@ -125,7 +125,7 @@ def test_multidomaindataset(batch_size=1, img_size=(352, 352)):
     train_loader = get_train_loader(img_size=img_size,
         imagenet_normalize=True,
         batch_size=batch_size,
-        train_list='train_list.txt',
+        train_dir='train_dir.txt',
         num_workers=0, 
         num_domains=12)
     ref_loader = get_ref_loader(img_size=img_size,
@@ -135,7 +135,7 @@ def test_multidomaindataset(batch_size=1, img_size=(352, 352)):
         num_workers=0,
         num_domains=12)
     latent_dim = 16
-    fetcher = InputProvider(train_loader, mode='train')
+    fetcher = TrainProvider(train_loader, mode='train')
     ref_fetcher = RefProvider(ref_loader, mode='train')
     # while True:
     while True:
