@@ -65,6 +65,7 @@ class Visualizer():
         Step 3: create an HTML object for saving HTML filters
         Step 4: create a logging file to store training losses
         """
+        logging.info('===== Visualizer =====')
         self.opt = opt  # cache the option
 
         if opt.display_id < 0:
@@ -76,7 +77,7 @@ class Visualizer():
         self.name = name
         self.port = opt.port
         self.saved = False
-        self.enabled = opt.enabled
+        self.enabled = opt.visdom
         self.target_domain_names = target_domain_names
 
         if self.enabled and self.display_id > 0:  # connect to a visdom server given <display_port> and <display_server>
@@ -99,7 +100,7 @@ class Visualizer():
         self.log_name = os.path.join(log_path, name, 'loss_log.txt')
         with open(self.log_name, "a") as log_file:
             now = time.strftime("%c")
-            log_file.write('================ Training Loss (%s) ================\n' % now)
+            log_file.write('========== Training Loss (%s) ==========\n' % now)
 
     def reset(self):
         """Reset the self.saved status"""
@@ -123,6 +124,8 @@ class Visualizer():
         """
         if self.display_id > 0:  # show images in the browser using visdom
             ncols = self.ncols
+            caption = ''
+            title = ''
             if ncols > 0:        # show all the images in one visdom panel
                 ncols = min(ncols, len(visuals))
                 h, w = next(iter(visuals.values())).shape[:2]
@@ -131,25 +134,24 @@ class Visualizer():
                 #         table td {width: % dpx; height: % dpx; padding: 4px; outline: 4px solid black}
                 #         </style>""" % (w, h)  # create a table css
                 # create a table of images.
-                title = self.name
                 images = []
                 idx = 0
                 for label, image in visuals.items():
                     image_numpy = utils.tensor2im(image)
                     images.append(image_numpy.transpose([2, 0, 1]))
                     idx += 1
+                    title += label + ' | '
                 white_image = np.ones_like(image_numpy.transpose([2, 0, 1])) * 255
                 while idx % ncols != 0:
                     images.append(white_image)
                     idx += 1
-                caption = ''
                 for key, value in d_labels.items():
                     caption += key + ': ' + utils.onehot_to_domain(value[0], self.target_domain_names) + ' '
                 # opts = dict(title= title)
 
                 try:
                     self.vis.images(images, ncols, 2, self.display_id + 1,
-                                    None, opts=dict(caption=caption))
+                                    None, opts=dict(caption=caption, title=title))
                 except VisdomExceptionBase:
                     self.create_visdom_connections()
 
@@ -201,17 +203,22 @@ class Visualizer():
         """
         if len(losses) == 0:
             return
+        _losses = {}
 
-        plot_name = '_'.join(list(losses.keys()))
+        for l, m in losses.items():
+            for k, v in m.items():
+                _losses[f'{l} - {k}'] = v.cpu().detach()
+
+        plot_name = '_'.join(list(_losses.keys()))
 
         if plot_name not in self.plot_data:
-            self.plot_data[plot_name] = {'X': [], 'Y': [], 'legend': list(losses.keys())}
+            self.plot_data[plot_name] = {'X': [], 'Y': [], 'legend': list(_losses.keys())}
 
         plot_data = self.plot_data[plot_name]
         plot_id = list(self.plot_data.keys()).index(plot_name)
 
         plot_data['X'].append(epoch + counter_ratio)
-        plot_data['Y'].append([losses[k] for k in plot_data['legend']])
+        plot_data['Y'].append([_losses[k] for k in plot_data['legend']])
         try:
             self.vis.line(
                 X=np.stack([np.array(plot_data['X'])] * len(plot_data['legend']), 1),
@@ -226,7 +233,7 @@ class Visualizer():
             self.create_visdom_connections()
 
     # losses: same format as |losses| of plot_current_losses
-    def print_current_losses(self, epoch, iters, losses, t_comp, t_data):
+    def print_current_losses(self, epoch, iters, losses, t_comp):
         """print current losses on console; also save the losses to the disk
 
         Parameters:
@@ -234,13 +241,14 @@ class Visualizer():
             iters (int) -- current training iteration during this epoch (reset to 0 at the end of every epoch)
             losses (OrderedDict) -- training losses stored in the format of (name, float) pairs
             t_comp (float) -- computational time per data point (normalized by batch_size)
-            t_data (float) -- data loading time per data point (normalized by batch_size)
         """
-        message = '============{}============ \n'.format(self.name)
-        message += 'Epoch: %d, iters: %d, time: %.3f, data: %.3f \n' % (epoch, iters, t_comp, t_data)
-        for k, v in losses.items():
-            message += '%s: %.3f \n' % (k, v)
+        message = f'===== {self.name} ===== \n'
+        message += f'>> Epoch: {epoch}, iters: {iters}, time: {t_comp:.2f}\n'
+        for l, m in losses.items():
+            message += f'>>>> == {l} == \n'
+            for k, v in m.items():
+                message += f'>>>> {k}: {v:.3f} \n'
 
-        logging.info('+++ {}'.format(message))  # print the message
+        logging.info('{}'.format(message))  # print the message
         with open(self.log_name, "a") as log_file:
             log_file.write('%s\n' % message)  # save the message

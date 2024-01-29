@@ -13,7 +13,7 @@ import torch
 
 ######################################### Forward #########################################
 
-def model_forward_generation(inputs: Union[torch.Tensor, dict], refs, lat_trg, model: dict, n_bbox: int = -1, feat_layers: List[str] = []) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def model_generation(inputs: Union[torch.Tensor, dict], refs, lat_trg, model: dict, from_lat:bool=True, n_bbox: int = -1, feat_layers: List[str] = []) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Forward pass of the generation model.
 
@@ -28,8 +28,11 @@ def model_forward_generation(inputs: Union[torch.Tensor, dict], refs, lat_trg, m
     """
     # when performing generation, the input is the content image from the data loader
     feat_content, features = model.ContentEncoder(inputs.img_src, feat_layers)
-    style_code = model.MappingNetwork(lat_trg, refs.d_trg)
-    utils.assign_adain_params(model.MLP_Adain(style_code), model.Transformer.module.transformer.layers)
+    if from_lat:
+        style_code = model.MappingNetwork(lat_trg, refs.d_trg)
+    else:
+        style_code = model.StyleEncoder(refs.img_ref, refs.d_trg)        
+    utils.assign_adain_params(model.MLPAdain(style_code), model.Transformer.module.transformer.layers)
     if 'bbox' in inputs and n_bbox != -1:
         features += [model.Transformer.module.extract_box_feature(feat_content, inputs.bbox, n_bbox)]
 
@@ -38,14 +41,14 @@ def model_forward_generation(inputs: Union[torch.Tensor, dict], refs, lat_trg, m
     else:
         aggregated_feat, aggregated_box, weights = model.Transformer(feat_content, sem_labels=inputs.seg, bbox_info=inputs.bbox, n_bbox=n_bbox)        
 
-    d_src_pred = model.DomainClassifier(aggregated_feat)
     fake = model.Generator(aggregated_feat)
     fake_box = model.Generator(aggregated_box, inputs.bbox) if n_bbox != -1 in inputs else None
     # logging.info('model forward generation d_src_pred: {}'.format(d_src_pred))
-    return fake, fake_box, features, d_src_pred
+    return fake, fake_box, features, style_code
 
 
-def model_forward_reconstruction(inputs: Union[torch.Tensor, dict], fake_img: torch.Tensor, model: dict, d_src_pred: torch.Tensor, feat_layers: List[str] = []) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+
+def model_reconstruction(inputs: Union[torch.Tensor, dict], fake_img: torch.Tensor, model: dict, feat_layers: List[str] = []) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Forward pass of the model for image reconstruction.
 
@@ -61,120 +64,92 @@ def model_forward_reconstruction(inputs: Union[torch.Tensor, dict], fake_img: to
     feat_content, _ = model.ContentEncoder(fake_img, feat_layers)
 
     # replace empty domain with predicted domain
-    d_recon_trg = inputs.d_src.clone()
-    max_values, _ = torch.max(d_recon_trg, dim=1)
-    d_recon_trg[max_values == 0] = d_src_pred[max_values == 0].to(d_recon_trg.dtype)
-    # style_code = model.StyleEncoder(inputs.img_src, torch.argmax(d_recon_trg, dim=1))
-    lat_recon_trg = torch.randn(inputs.lat_trg.shape).to(inputs.lat_trg.device)
+    style_code = model.StyleEncoder(inputs.img_src, inputs.d_src)
     # use mapping network to generate a style code for the reconstruction
-    recon_style_code = model.MappingNetwork(lat_recon_trg, d_recon_trg)
-    utils.assign_adain_params(model.MLP_Adain(recon_style_code), model.Transformer.module.transformer.layers)
+    utils.assign_adain_params(model.MLPAdain(style_code), model.Transformer.module.transformer.layers)
     # use segmenation map from source also for reconstruction
     aggregated_feat, _, _ = model.Transformer(feat_content, sem_embed=True, sem_labels=inputs.seg, n_bbox=-1)
     # aggregated_feat, _, weights = model.Transformer(feat_content, sem_embed=False, n_bbox=-1)
-    d_fake_img_pred = model.DomainClassifier(aggregated_feat)
     rec_img = model.Generator(aggregated_feat)
-    return rec_img, recon_style_code, d_fake_img_pred
+    return rec_img
 
 
 ######################################### Total Loss #########################################
 
-def compute_D_loss(inputs, refs, fake_img, model_D, criterions):
-    """
-    Calculate GAN loss for the discriminator.
-
-    Args:
-        inputs (Tensor): The input tensor.
-        fake_img (Tensor): The fake image tensor.
-        model_D (dict): The dictionary containing the discriminator model.
-        criterions (dict): The dictionary containing the GAN loss criterions.
-
-    Returns:
-        tuple: A tuple containing the total discriminator loss and a dictionary of individual discriminator losses.
-    """
+def compute_D_loss(inputs, refs, model, criterions, cfg, from_lat=True, gan_mode='lsgan'):
+    total_D_loss = 0
+    fake_img, _, _, _ = model_generation(inputs=inputs, refs=refs, lat_trg=inputs.lat_trg, model=model, n_bbox=cfg.TRAIN.n_bbox, feat_layers=cfg.MODEL.feat_layers, from_lat=from_lat) 
+    
     D_losses = Munch()  
-    D_losses.D_fake_loss = compute_Discrim_loss(fake_img, utils.batch_to_onehot(refs.d_trg), model_D.Discrim, criterions.GAN, False) 
+    D_losses.D_fake_loss = compute_Discrim_loss(fake_img, utils.batch_to_onehot(refs.d_trg), model.Discriminator, criterions.GAN, False) 
     if inputs.d_src.sum() > 0.0:
-        D_losses.D_real_loss = compute_Discrim_loss(inputs.img_src, inputs.d_src, model_D.Discrim, criterions.GAN, True)
+        D_losses.D_real_loss = compute_Discrim_loss(inputs.img_src, inputs.d_src, model.Discriminator, criterions.GAN, True)
     else:
         D_losses.D_real_loss = torch.tensor(0.0).to(inputs.img_src.device)
     # use the ref image and randomly change the domain to be eihter real of fake:
     if torch.rand(1) > 0.5:
         d_fake = utils.random_change_matrix(refs.d_trg)
-        D_losses.D_loss_aux = compute_Discrim_loss(refs.img_ref, d_fake, model_D.Discrim, criterions.GAN, False)
+        D_losses.D_loss_aux = compute_Discrim_loss(refs.img_ref, d_fake, model.Discriminator, criterions.GAN, False)
     else:
-        D_losses.D_loss_aux = compute_Discrim_loss(refs.img_ref, refs.d_trg, model_D.Discrim, criterions.GAN, True)
-    total_D_loss = (D_losses.D_fake_loss +  D_losses.D_real_loss + D_losses.D_loss_aux) / 3.0
+        D_losses.D_loss_aux = compute_Discrim_loss(refs.img_ref, refs.d_trg, model.Discriminator, criterions.GAN, True)
+  
+    if gan_mode == 'vanilla':
+        D_losses.D_reg_loss = cfg.TRAIN.w_l_reg * r1_reg(model.Discriminator, inputs.img_src, inputs.d_src)
 
-    return total_D_loss, D_losses
+    for _, loss in D_losses.items():
+        total_D_loss += loss
+        
+    return total_D_loss/len(D_losses), D_losses
 
 
 def compute_G_loss(inputs: Dict, 
                    refs: Dict, 
-                   fake_imgs: List[torch.Tensor], 
-                   recon_img: torch.Tensor, 
-                   features: torch.Tensor, 
-                   box_feature: torch.Tensor, 
-                   model_G: Dict, 
-                   model_D: Dict, 
-                   model_F: Dict, 
+                   model: Dict,
                    criterions: Dict, 
-                   s_trg: torch.Tensor,
-                   cfg: object) -> Tuple[float, Dict]:
-    """
-    Calculate loss for the generator.
+                   cfg: object,
+                   from_lat:bool =True) -> Tuple[float, Dict]:
+ 
 
-    Args:
-        inputs (Dict): Input data dictionary.
-        fake_imgs (List[torch.Tensor]): Fake images generated by the generator.
-        recon_img (torch.Tensor): Reconstructed image.
-        style_code (torch.Tensor): Style code.
-        features (torch.Tensor): Features.
-        box_feature (torch.Tensor): Box feature.
-        model_G (Dict): Generator model dictionary.
-        model_D (Dict): Discriminator model dictionary.
-        model_F (Dict): MLP model dictionary.
-        criterions (Dict): Loss criterions dictionary.
-        cfg (object): Configuration object.
+    fake_img, box_feature, features, s_trg = model_generation(inputs=inputs, refs=refs, lat_trg=inputs.lat_trg, model=model, n_bbox=cfg.TRAIN.n_bbox, feat_layers=cfg.MODEL.feat_layers, from_lat=from_lat) 
 
-    Returns:
-        Tuple[float, Dict]: A tuple containing the total generator loss and a dictionary of individual losses.
-    """
+    if cfg.TRAIN.n_bbox > 0 and len(features) > len(cfg.MODEL.feat_layers):
+        features, box_feature = features[:-1], features[-1]
+
     G_losses = Munch()
     total_G_loss = 0
 
-    fake_img = fake_imgs[0]
+    # fake_img = fake_imgs[0]
     if cfg.TRAIN.w_GAN > 0.0:
-        G_losses.GAN_loss = cfg.TRAIN.w_GAN * compute_GAN_loss(fake_img, utils.batch_to_onehot(refs.d_trg), model_D.Discrim, criterions.GAN)
+        G_losses.GAN_loss = cfg.TRAIN.w_GAN * compute_GAN_loss(fake_img, utils.batch_to_onehot(refs.d_trg), model.Discriminator, criterions.GAN)
     
-    if cfg.TRAIN.w_Recon > 0.0:
-        s_fake = model_G.StyleEncoder(fake_img, torch.argmax(refs.d_trg, dim=1))
-        G_losses.style_loss = cfg.TRAIN.w_Recon * compute_style_recon_loss(s_fake, s_trg, criterions.Idt)
-
-    if cfg.TRAIN.w_StyleRef > 0.0:
-        s_ref = model_G.StyleEncoder(refs.img_ref, torch.argmax(refs.d_trg, dim=1))
-        G_losses.style_ref_loss = cfg.TRAIN.w_StyleRef * compute_style_ref_loss(s_trg, s_ref, criterions.Idt)
+    if cfg.TRAIN.w_StyleRecon > 0.0:
+        s_fake = model.StyleEncoder(fake_img, refs.d_trg)
+        G_losses.style_loss = cfg.TRAIN.w_StyleRecon * compute_style_recon_loss(s_fake, s_trg, criterions.Idt)
     
-    if cfg.TRAIN.w_NCE > 0.0 or (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0):
-        fake_feat_content, fake_features = model_G.ContentEncoder(fake_img, cfg.MODEL.feat_layers)
-        if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0:
-            fake_box_feature = model_G.Transformer.module.extract_box_feature(fake_feat_content, inputs.bbox, cfg.DATASET.n_bbox)
+    if cfg.TRAIN.w_NCE > 0.0 or (cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0):
+        fake_feat_content, fake_features = model.ContentEncoder(fake_img, cfg.MODEL.feat_layers)
+        if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0:
+            fake_box_feature = model.Transformer.module.extract_box_feature(fake_feat_content, inputs.bbox, cfg.TRAIN.n_bbox)
 
     if cfg.TRAIN.w_NCE > 0.0:
-        G_losses.NCE_loss = cfg.TRAIN.w_NCE * compute_NCE_loss(fake_features, features, model_F.MLP_head, criterions.NCE, cfg.MODEL.num_patches)
-    if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.DATASET.n_bbox > 0:
+        G_losses.NCE_loss = cfg.TRAIN.w_NCE * compute_NCE_loss(fake_features, features, model.MLPHead, criterions.NCE, cfg.MODEL.num_patches)
+    if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0:
         valid_box=torch.where(inputs.bbox[:,:,0] > 0, True,False).view(-1)
         if valid_box[valid_box ==  True].shape[0] == 0.0:
             G_losses.instNCE_loss = torch.tensor(0.0).to(inputs.img_src.device)
         else:
             criterions.InstNCE.batch_size = valid_box[valid_box ==  True].shape[0]
-            G_losses.instNCE_loss = cfg.TRAIN.w_Instance_NCE * compute_NCE_loss([fake_box_feature[valid_box,:,:,:]], [box_feature[valid_box,:,:,:]], model_F.MLP_head_inst, criterions.InstNCE, 64)
+            G_losses.instNCE_loss = cfg.TRAIN.w_Instance_NCE * compute_NCE_loss([fake_box_feature[valid_box,:,:,:]], [box_feature[valid_box,:,:,:]], model.MLPHeadInst, criterions.InstNCE, 64)
     
-    if len(fake_imgs) and cfg.TRAIN.w_StyleDiv > 0.0:
-        G_losses.style_div_loss = cfg.TRAIN.w_StyleDiv * compute_diversity_loss(fake_img, fake_imgs[1], criterions.Style_Div)
+    if cfg.TRAIN.w_StyleDiv > 0.0 and from_lat:
+        fake_img_2, _, _, _ = model_generation(inputs=inputs, refs=refs, lat_trg=inputs.lat_trg_2, model=model, n_bbox=cfg.TRAIN.n_bbox, feat_layers=cfg.MODEL.feat_layers)
+        G_losses.style_div_loss = cfg.TRAIN.w_StyleDiv * compute_diversity_loss(fake_img, fake_img_2, criterions.Style_Div)
     
     if cfg.TRAIN.w_Cycle > 0.0:
+        recon_img = model_reconstruction(inputs=inputs, fake_img=fake_img, model=model, feat_layers=cfg.MODEL.feat_layers)
         G_losses.cycle_loss = cfg.TRAIN.w_Cycle * compute_cycle_loss(inputs.img_src, recon_img, criterions.Cycle)
+    else: 
+        recon_img = torch.zeros_like(fake_img)
 
     # if cfg.TRAIN.w_DClass > 0.0:
     #     if d_src_pred is not None and torch.max(inputs.d_src) > 0.0:
@@ -188,7 +163,7 @@ def compute_G_loss(inputs: Dict,
         else: 
             total_G_loss += loss
 
-    return total_G_loss, G_losses
+    return total_G_loss, G_losses, fake_img, recon_img
 
 
 ######################################### Each Loss #########################################
@@ -197,7 +172,7 @@ def compute_G_loss(inputs: Dict,
 
 def compute_Discrim_loss(img, domain, model, criterion, Target=True):
     """
-    Calculate the discriminator loss.
+    Calculate the Discriminator loss.
 
     Args:
         img (torch.Tensor): Input image.
@@ -332,3 +307,21 @@ def compute_domain_classification_loss(d_src, d_src_pred, criterion):
     # logging.info(f"trg_idx: {trg_idx} d_src_pred: {d_src_pred}")
     # logging.info(f"Domain Classification Loss: {test} {test.shape} {test.dtype}")
     return test
+
+def r1_reg(d_out, x_in):
+    # zero-centered gradient penalty for real images
+    batch_size = x_in.size(0)
+    grad_dout = torch.autograd.grad(
+        outputs=d_out.sum(), inputs=x_in,
+        create_graph=True, retain_graph=True, only_inputs=True
+    )[0]
+    grad_dout2 = grad_dout.pow(2)
+    assert(grad_dout2.size() == x_in.size())
+    reg = 0.5 * grad_dout2.view(batch_size, -1).sum(1).mean(0)
+    return reg
+
+def adv_loss(logits, target):
+    assert target in [1, 0]
+    targets = torch.full_like(logits, fill_value=target)
+    loss = torch.functional.binary_cross_entropy_with_logits(logits, targets)
+    return loss

@@ -1,6 +1,6 @@
 import os
 from packaging import version
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import torchvision.utils as vutils
 
 from argparse import Namespace
@@ -19,13 +19,44 @@ from einops import repeat, rearrange
 
 
 ##################################### Visualize ##################################### 
-def denormalize(x, mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]):
+def denormalize(x, mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]):
     # 3, H, W, B
     ten = x.clone().permute(1, 2, 3, 0)
     for t, m, s in zip(ten, mean, std):
         t.mul_(s).add_(m)
     # B, 3, H, W
     return torch.clamp(ten, 0, 1).permute(3, 0, 1, 2)
+
+def domain_to_image_tensor(d_trg:torch.Tensor, target_domains:list, img_size=(320, 320)):
+    """Convert one-hot encoded domains to image tensors"""
+    domain_imgs = []
+    domains = d_trg.argmax(dim=1)
+    for i in range(d_trg.shape[0]):
+        domain_imgs.append(text_to_img(target_domains[domains[i]], img_size))
+    return torch.stack(domain_imgs, dim=0).to(d_trg.device)
+
+
+
+def text_to_img(text:str, img_size=(320, 320)):
+    """Convert domain name image as tensor"""
+    # Create a white square image
+    image = Image.new('RGB', img_size , 'white')
+
+    # Draw image with text using PIL    
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default(size=80)  # or specify a font with ImageFont.truetype()
+    _ , _, text_width, text_height = draw.textbbox((0, 0), text, font=font)
+    position = ((img_size[0] - text_width) // 2, (img_size[1] - text_height) // 2)
+    draw.text(position, text, fill="black", font=font)
+
+    # Convert the PIL Image to torch Tensor
+    numpy_image = np.array(image)
+    tensor_image = torch.from_numpy(numpy_image)
+    tensor_image = tensor_image.permute(2, 0, 1)
+
+    return tensor_image
+
+    
 
 @torch.no_grad()
 def translate_using_latent(model_G, cfg, input, d_trg, psi, filename, latent_dim=64, feat_layers=[]):
@@ -43,7 +74,7 @@ def translate_using_latent(model_G, cfg, input, d_trg, psi, filename, latent_dim
     d_trg = rearrange(d_trg, 'b -> 1 b')
     s_trg = model_G.MappingNetwork(z_trg, d_trg)
     s_trg = torch.lerp(s_avg, s_trg, 0.0)
-    assign_adain_params(model_G.MLP_Adain(s_trg), model_G.Transformer.transformer.layers)
+    assign_adain_params(model_G.MLPAdain(s_trg), model_G.Transformer.transformer.layers)
     feat_content, features = model_G.ContentEncoder(input.img, feat_layers)    
     aggregated_feat, _, _ = model_G.Transformer(feat_content, sem_embed=True, sem_labels=input.seg, n_bbox=-1)
      
@@ -93,7 +124,7 @@ def onehot_to_domain(onehot, target_domain_names=[], domain_dict='helper/data_cf
 def domain_to_onehot(domain, target_domain_names):
     """Convert domain name to one-hot vector."""
     idx, n_dom = get_domain_indexes([domain])
-    onehot = torch.zeros(n_dom, dtype=torch.float32)
+    onehot = torch.zeros(n_dom, dtype=torch.int)
     onehot[idx] = 1    
     idxs, _ = get_domain_indexes(target_domain_names) 
     return onehot[idxs]
@@ -282,6 +313,21 @@ def model_mode(model, mode = 0):
         else:
             m.eval()
 
+def print_network(module, name):
+    num_params = sum(p.numel() for p in module.parameters())
+    logging.info(f'>> # Parameters {name}: {num_params:,}')
+
+
+def he_init(module):
+    if isinstance(module, nn.Conv2d):
+        nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
+        if module.bias is not None:
+            nn.init.constant_(module.bias, 0)
+    if isinstance(module, nn.Linear):
+        nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
+        if module.bias is not None:
+            nn.init.constant_(module.bias, 0)
+
 def segmentation_to_bbox(mask, bg_classes = [0,1,2]):
     """Transfer a segmentation mask derived from an image file to a dictionary of bounding boxes for each class in the map.
     Remove backgound classes from a list of classes.
@@ -431,7 +477,7 @@ def tensor2im(input_image, imtype=np.uint8):
     except RuntimeError:
         return np.ones_like(image_numpy.transpose([2, 0, 1])) * 255
 
-def save_image_from_tensor(x, filename, normalize=''):
+def save_image_from_tensor(x, filename, normalize='default'):
     _x = x.clone().detach()
     if normalize == 'imagenet':
         mean = torch.Tensor([0.485, 0.456, 0.406])
@@ -616,6 +662,11 @@ class PatchNCELoss(nn.Module):
         l_neg_curbatch = torch.bmm(feat_q, feat_k.transpose(2, 1)) 
 
         diagonal = torch.eye(npatches, device=feat_q.device, dtype=self.mask_dtype)[None, :, :]
+        # # continue helper
+        #  for i in range(batch_size):
+        #     # Selecting negative patches within the same sample
+        #     neg_indices = self.get_negative_indices(num_patches, i, batch_size)
+        #     negatives.append(feat_k[neg_indices])
         l_neg_curbatch.masked_fill_(diagonal, -10.0)
         l_neg = l_neg_curbatch.view(-1, npatches)
 

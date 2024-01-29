@@ -29,10 +29,6 @@ _C.DATASET.num_domains = 8
 # maximum number of images per folder
 _C.DATASET.max_dataset_size = 200000
 # Maximum number of object boxes per image
-_C.DATASET.n_bbox = -1
-# enable random flip during training
-_C.DATASET.random_flip = True
-
 # -----------------------------------------------------------------------------
 # Model
 # -----------------------------------------------------------------------------
@@ -53,7 +49,7 @@ _C.MODEL.in_channels = 3
 _C.MODEL.fc_dim = 2048
 # feature layers for NCE loss
 _C.MODEL.feat_layers = [0, 4, 8]
-# number of patches for
+# number of patches for NCE loss
 _C.MODEL.num_patches = 256
 # patch size
 _C.MODEL.patch_size = 8
@@ -62,7 +58,7 @@ _C.MODEL.num_neg = 64
 # number of positive samples for NCE loss
 _C.MODEL.num_pos = 1
 # input image size
-_C.MODEL.img_size = (352, 352)
+_C.MODEL.img_size = (384, 384)
 # Style code dimension
 _C.MODEL.style_dim = 64
 # Latent code dimension
@@ -70,7 +66,7 @@ _C.MODEL.latent_dim = 16
 # dimension of the semantic embedding
 _C.MODEL.sem_embed_dim = 64
 # Mapping Network hidden dimension
-_C.MODEL.hidden_dim = 1088
+_C.MODEL.hidden_dim = 512
 # number of content channels
 _C.MODEL.content_dim = 256
 # number of downsampling layers in the content encoder
@@ -93,6 +89,18 @@ _C.MODEL.TRANSFORMER.depth = 6
 _C.MODEL.TRANSFORMER.heads = 4
 # dimension of each head
 _C.MODEL.TRANSFORMER.mlp_dim = 4096
+
+_C.MODEL.SWINV2 = CN()
+_C.MODEL.SWINV2.PATCH_SIZE = 4
+_C.MODEL.SWINV2.IN_CHANS = 3
+_C.MODEL.SWINV2.EMBED_DIM = 96
+_C.MODEL.SWINV2.DEPTHS = [2, 2, 6, 2]
+_C.MODEL.SWINV2.NUM_HEADS = [3, 6, 12, 24]
+_C.MODEL.SWINV2.WINDOW_SIZE = 7
+_C.MODEL.SWINV2.MLP_RATIO = 4.
+_C.MODEL.SWINV2.QKV_BIAS = True
+_C.MODEL.SWINV2.APE = False
+_C.MODEL.SWINV2.PATCH_NORM = True
 
 
 
@@ -120,46 +128,44 @@ _C.TRAIN.epoch_iters = 5000
 _C.TRAIN.optim = 'Adam'
 # momentum terms for Adam optimizer
 _C.TRAIN.optim_beta = (0.5, 0.999)
+# weight decay
+_C.TRAIN.weight_decay = 0.0001
 # learning rate
-_C.TRAIN.lr = 0.02
-# indiviudal learning rate for encoder, generator and discriminator
-_C.TRAIN.lr_encoder = 2e-4
-_C.TRAIN.lr_generator = 2e-4
-_C.TRAIN.lr_discriminator = 2e-4
-_C.TRAIN.lr_scheduler = False
-_C.TRAIN.lr_mappingnetwork = 4e-4
+_C.TRAIN.lr = 2e-4
+# indiviudal learning rate for encoder, generator and discriminator... 
+_C.TRAIN.lr_CE = 2e-4 
+_C.TRAIN.lr_G = 2e-4
+_C.TRAIN.lr_D = 2e-4
+_C.TRAIN.lr_MN = 2e-6
 _C.TRAIN.lr_MLP = 2e-4
+
 # learning rate scheduler step size
+_C.TRAIN.lr_scheduler = False
 _C.TRAIN.scheduler_step_size = 100
 # power in poly to drop LR
 _C.TRAIN.lr_pow = 0.9
 # fix bn params, only under finetuning
 _C.TRAIN.fix_bn = False
 # number of data loading workers
-_C.TRAIN.workers = 16
+_C.TRAIN.workers = 20
 
 # weights for losses
 _C.TRAIN.w_GAN = 1.0
-_C.TRAIN.w_Recon = 10.0
-_C.TRAIN.w_StyleRef = 10.0
+_C.TRAIN.w_StyleRecon = 10.0
 _C.TRAIN.w_StyleDiv = 10.0
+_C.TRAIN.lambda_StyleDiv = 1.0
+_C.TRAIN.w_StyleDiv_iter = 100000
 _C.TRAIN.w_NCE = 2.0
 _C.TRAIN.w_Instance_NCE = 2.0
 _C.TRAIN.w_Cycle = 2.0
 _C.TRAIN.w_DClass = 1.0
-
+_C.TRAIN.w_l_reg = 1.0
+# maximum number of bounding boxes
+_C.TRAIN.n_bbox = 4
 # image normalization type one of imagenet, default, none
-_C.TRAIN.img_norm = 'imagenet'
+_C.TRAIN.img_norm = 'default'
 # frequency to save checkpoints 
 _C.TRAIN.save_epoch = 5
-# frequency to display training info
-_C.TRAIN.display_sample_iter = 500
-# frequency to save training images
-_C.TRAIN.image_save_iter = 1000
-# frequency to print training info on console
-_C.TRAIN.print_losses_iter = 100
-# frequency to display loss visualizations
-_C.TRAIN.display_losses_iter = 200
 # manual seed
 _C.TRAIN.seed = 304
 # use cuda
@@ -170,6 +176,8 @@ _C.TRAIN.gpu_ids = [0]
 _C.TRAIN.log_path = './weights'
 # distributed training
 _C.TRAIN.distributed = False
+# use label smoothing for discriminator
+_C.TRAIN.smooth_label = False
 
 # ------------------------------------------------------------------------------
 # preprocessing options
@@ -199,26 +207,34 @@ _C.TRAIN.PREPROCESS.grayscale = False
 # ------------------------------------------------------------------------------
 # Visualization
 # ------------------------------------------------------------------------------
-_C.VISDOM = CN()
+_C.VISUAL = CN()
 #-------------------------------------------------------------------------------
 # enable visualization using visdom
-_C.VISDOM.enabled = True
+_C.VISUAL.visdom = True
 # display size in visdom
-_C.VISDOM.display_winsize = 256
+_C.VISUAL.display_winsize = 256
 # number of columns to display in visdom
-_C.VISDOM.display_ncols = 4
+_C.VISUAL.display_ncols = 4
 # window id of the web display
-_C.VISDOM.display_id = -1
+_C.VISUAL.display_id = -1
 # visdom server
-_C.VISDOM.server = 'http://localhost'
+_C.VISUAL.server = 'http://localhost'
 # visdom port
-_C.VISDOM.port = 8097
+_C.VISUAL.port = 8097
 # name of the visdom workspace
-_C.VISDOM.env = 'main'
+_C.VISUAL.env = 'main'
 # frequency to save visualization results
-_C.VISDOM.save_results_freq = 1000
+_C.VISUAL.save_results_freq = 1000
 # save intermediate training results to disk as html
-_C.VISDOM.save_intermediate = True
+_C.VISUAL.save_intermediate = True
+# frequency to display training info
+_C.VISUAL.display_sample_iter = 500
+# frequency to save training images
+_C.VISUAL.image_save_iter = 1000
+# frequency to print training info on console
+_C.VISUAL.print_losses_iter = 100
+# frequency to display loss visualizations
+_C.VISUAL.display_losses_iter = 200
 
 # -----------------------------------------------------------------------------
 # Validation

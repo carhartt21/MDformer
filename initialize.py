@@ -1,6 +1,7 @@
 import random
 import os
 import logging
+import copy
 from munch import Munch
 import torch
 import torch.nn as nn
@@ -37,10 +38,10 @@ def set_seed(seed=42):
     torch.cuda.manual_seed_all(seed) # if use multi-GPU
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    logging.info("+ Seed set to: {}".format(seed))
+    logging.info(">> Seed set to: {}".format(seed))
     return
 
-def build_model(cfg, device, distributed=False, num_domains=8, mode='train'):
+def build_model(cfg):
     """
     Build the model for training.
 
@@ -53,33 +54,28 @@ def build_model(cfg, device, distributed=False, num_domains=8, mode='train'):
     Returns:
         tuple: A tuple containing the model_G, parameter_G, model_D, parameter_D, and model_F.
     """
-    logging.info("+ Building the Model")
-    logging.info("++ Distributed Training: {}".format(distributed))
-    if distributed:
-        torch.cuda.set_device(device)
-        dist.init_process_group(backend='nccl', init_method='env://')
-        logging.info("++ Device : {}".format(device))
-        # logging.info(f"model_cfg.gpu_ids : {model_cfg.gpu_ids}")
+    logging.info("===== Building the Model =====")
+    # if distributed:
+    #     logging.info(">> Distributed Training: {}".format(distributed))
+    #     torch.cuda.set_device(device)
+    #     dist.init_process_group(backend='nccl', init_method='env://')
+    #     logging.info(">>>> Device : {}".format(device))
+    #     # logging.info(f"model_cfg.gpu_ids : {model_cfg.gpu_ids}")
     model_cfg = cfg.MODEL
-    model_G = Munch()
-    parameter_G = []
-    model_D = Munch()
-    parameter_D = []
-    model_F = Munch()
-    parameter_F = []
+    num_domains = len(cfg.DATASET.target_domain_names)
 
     # domain_idxs = utils.get_domain_indexes(model_cfg.DATASET.target_domain_names)
     # logging.info("domain_idxs : {}".format(domain_idxs))
     # TODO: add test mode
-    logging.info("++ Building the ContentEncoder")
-    model_G.ContentEncoder = networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling)
-    logging.info("++ Building the StyleEncoder")
-    model_G.StyleEncoder = networks.StyleEncoder(input_channels=model_cfg.in_channels, 
+    logging.info(">> Building the ContentEncoder")
+    ContentEncoder = nn.DataParallel(networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling))
+    logging.info(">> Building the StyleEncoder")
+    StyleEncoder = nn.DataParallel(networks.StyleEncoder(input_channels=model_cfg.in_channels, 
                                                         n_generator_filters=model_cfg.n_generator_filters, 
                                                         style_dim=model_cfg.style_dim, 
-                                                        num_domains=num_domains)
-    logging.info("++ Building the Transformer")
-    model_G.Transformer = networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
+                                                        num_domains=num_domains))
+    logging.info(">> Building the Transformer")
+    Transformer = nn.DataParallel(networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
                                                                  patch_size=model_cfg.patch_size, 
                                                                  patch_embed_C=model_cfg.TRANSFORMER.embed_C, 
                                                                  sem_embed_C=model_cfg.sem_embed_dim,
@@ -87,130 +83,115 @@ def build_model(cfg, device, distributed=False, num_domains=8, mode='train'):
                                                                  depth=model_cfg.TRANSFORMER.depth, 
                                                                  heads=model_cfg.TRANSFORMER.heads, 
                                                                  mlp_dim=model_cfg.TRANSFORMER.mlp_dim,
-                                                                 vis = False)
-    logging.info("++ Building the DomainClassifier")
-    model_G.DomainClassifier = networks.TransformerClassifier(input_dim=model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim, num_classes=num_domains)
-    logging.info("++ Building the Generator")
-    model_G.Generator = networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
+                                                                 vis = False))
+    logging.info(">> Building the Generator")
+    Generator = nn.DataParallel(networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
                                                   patch_size=model_cfg.patch_size, 
                                                   embed_C=model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim, 
                                                   feat_C=model_cfg.TRANSFORMER.feat_C, 
                                                   n_generator_filters=model_cfg.n_generator_filters,
-                                                  n_downsampling=model_cfg.n_downsampling)
-    logging.info("++ Building the MLP Block") 
-    model_G.MLP_Adain = networks.MLP(input_dim=model_cfg.style_dim, output_dim=2*(model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim))
+                                                  n_downsampling=model_cfg.n_downsampling))
+    logging.info(">> Building the MLP Block") 
+    MLPAdain = nn.DataParallel(networks.MLP(input_dim=model_cfg.style_dim, output_dim=2*(model_cfg.TRANSFORMER.embed_C + model_cfg.sem_embed_dim)))
 
-    logging.info("++ Building the Mapping Network")
-    model_G.MappingNetwork = networks.MappingNetwork(num_domains=num_domains, 
+    logging.info(">> Building the Mapping Network")
+    MappingNetwork = nn.DataParallel(networks.MappingNetwork(num_domains=num_domains, 
                                                             latent_dim=model_cfg.latent_dim,
-                                                            style_dim=model_cfg.style_dim)
+                                                            style_dim=model_cfg.style_dim, 
+                                                            hidden_dim=model_cfg.hidden_dim))
     
-    if mode == 'test':
-        return model_G
 
-    logging.info("++ Building the Discriminator")
-    model_D.Discrim = networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3, num_domains=num_domains)
-    logging.info("++ Building the MLP Heads for Loss Calculation")
+    logging.info(">> Building the Discriminator")
+    Discriminator = nn.DataParallel(networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3, num_domains=num_domains))
+    logging.info(">> Building the MLP Heads")
     if (cfg.TRAIN.w_NCE>0.0):
-        model_F.MLP_head = networks.MLP_Head()
+        MLPHead = nn.DataParallel(networks.MLPHead())
     if (cfg.TRAIN.w_Instance_NCE>0.0):
-        model_F.MLP_head_inst = networks.MLP_Head()
+        MLPHeadInst = nn.DataParallel(networks.MLPHead())
 
-    # if distributed:
-    #     model_G.ContentEncoder = DDP(networks.ContentEncoder(input_channels=model_cfg.in_channels, n_generator_filters=model_cfg.n_generator_filters, n_downsampling=model_cfg.n_downsampling)
-        
-    #     model_G.StyleEncoder = DDP(networks.StyleEncoder(input_channels=model_cfg.in_channels, 
-    #                                                     n_generator_filters=model_cfg.n_generator_filters, 
-    #                                                     style_dim=model_cfg.style_dim, 
-    #                                                     num_domains= num_domains))
-        
-    #     model_G.Transformer = DDP(networks.Transformer_Aggregator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
-    #                                                             patch_size=model_cfg.patch_size, 
-    #                                                             embed_C=model_cfg.TRANSFORMER.embed_C, 
-    #                                                             feat_C=model_cfg.n_generator_filters*2**(model_cfg.n_downsampling), 
-    #                                                             depth=model_cfg.TRANSFORMER.depth, 
-    #                                                             heads=model_cfg.TRANSFORMER.heads, 
-    #                                                             mlp_dim=model_cfg.TRANSFORMER.mlp_dim))
-    #     model_G.MLP_Adain = DDP(networks.MLP(input_dim=model_cfg.style_dim, output_dim=2048))
+    ContentEncoder_ema = copy.deepcopy(ContentEncoder)
+    StyleEncoder_ema = copy.deepcopy(StyleEncoder)
+    Transformer_ema = copy.deepcopy(Transformer)
+    Generator_ema = copy.deepcopy(Generator)
+    MLPAdain_ema = copy.deepcopy(MLPAdain)
+    MappingNetwork_ema = copy.deepcopy(MappingNetwork)
+    Discriminator_ema = copy.deepcopy(Discriminator)
+    MLPHead_ema = copy.deepcopy(MLPHead)
+    MLPHeadInst_ema = copy.deepcopy(MLPHeadInst)
 
-    #     model_G.DomainClassifier = DDP(networks.TransformerClassifier(input_dim=model_cfg.TRANSFORMER.embed_C, num_classes=num_domains))
-
-    #     model_G.Generator = DDP(networks.Generator(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
-    #                                             patch_size=model_cfg.patch_size, 
-    #                                             embed_C=model_cfg.TRANSFORMER.embed_C, 
-    #                                             feat_C=model_cfg.TRANSFORMER.feat_C, 
-    #                                             n_generator_filters=model_cfg.n_generator_filters,
-    #                                             n_downsampling=model_cfg.n_downsampling,
-    #                                             ))
-        
-    #     model_G.MappingNetwork = DDP(networks.MappingNetwork(num_domains=num_domains, 
-    #                                                             latent_dim=model_cfg.latent_dim,
-    #                                                             style_dim=model_cfg.style_dim))
-        
-
-    #     model_D.Discrim = DDP(networks.NLayerDiscriminator(input_channels=model_cfg.in_channels, ndf=model_cfg.n_discriminator_filters, n_layers=3, num_domains=num_domains))
-
-    #     model_F.MLP_head = DDP(networks.MLP_Head())
-    #     model_F.MLP_head_inst = DDP(networks.MLP_Head())
-
-    if model_cfg.load_weight:
-        logging.info("+ Loading Network weights")
-        for key in model_G.keys():
-            file = os.path.join(model_cfg.weight_path, f'{key}.pth')
-            if os.path.isfile(file):
-                logging.info("++ Success load weight {}".format(key))
-                model_load_dict = torch.load(file, map_location=device)
-                keys = model_load_dict.keys()
-                values = model_load_dict.values()
-
-                new_keys = []
-                for i, mykey in enumerate(keys):
-                    new_key = mykey[7:] #REMOVE 'module.'
-                    new_keys.append(new_key)
-                new_dict = OrderedDict(list(zip(new_keys,values)))
-                model_G[key].load_state_dict(new_dict)
-            else:
-                logging.info("++ Does not exist {}".format(file))
-
-        for key in model_D.keys():
-            file = os.path.join(model_cfg.weight_path, f'{key}.pth')
-            if os.path.isfile(file):
-                logging.info("++ Success load {} weight".format(key))
-                model_load_dict = torch.load(file, map_location=device)
-                keys = model_load_dict.keys()
-                values = model_load_dict.values()
-
-                new_keys = []
-                for _key in keys:
-                    new_key = _key[7:] #REMOVE 'module.'
-                    new_keys.append(new_key)
-                new_dict = OrderedDict(list(zip(new_keys,values)))
-                model_D[key].load_state_dict(new_dict)
-            else:
-                logging.info("++ Does not exist {}".format(file))
-            
-    for key, val in model_G.items():
-        model_G[key] = nn.DataParallel(val)
-        model_G[key].to(device)
-        model_G[key].train()
-        parameter_G += list(val.parameters())
-        if key == 'MappingNetwork':
-            parameter_M = list(val.parameters())
-
-    for key, val in model_D.items():
-        model_D[key] = nn.DataParallel(val)
-        model_D[key].to(device)
-        model_D[key].train()
-        parameter_D += list(val.parameters())
+    model= Munch(ContentEncoder=ContentEncoder,
+                    StyleEncoder=StyleEncoder,
+                    Transformer=Transformer,
+                    Generator=Generator,
+                    MLPAdain=MLPAdain,
+                    MappingNetwork=MappingNetwork,
+                    Discriminator=Discriminator,
+                    MLPHead=MLPHead,
+                    MLPHeadInst=MLPHeadInst)
     
-    for key, val in model_F.items():
-        model_F[key] = nn.DataParallel(val)
-        model_F[key].to(device)
-        model_F[key].train()
-        parameter_F += list(val.parameters())
 
-    return model_G, parameter_G, model_D, parameter_D, model_F, parameter_F, parameter_M
+    model_ema= Munch(ContentEncoder=ContentEncoder_ema,
+                    StyleEncoder=StyleEncoder_ema,
+                    Transformer=Transformer_ema,
+                    Generator=Generator_ema,
+                    MappingNetwork=MappingNetwork_ema)
 
+    # if model_cfg.load_weight:
+    #     logging.info("+ Loading Network weights")
+    #     for key in model_G.keys():
+    #         file = os.path.join(model_cfg.weight_path, f'{key}.pth')
+    #         if os.path.isfile(file):
+    #             logging.info(">> Success load weight {}".format(key))
+    #             model_load_dict = torch.load(file, map_location=device)
+    #             keys = model_load_dict.keys()
+    #             values = model_load_dict.values()
+
+    #             new_keys = []
+    #             for i, mykey in enumerate(keys):
+    #                 new_key = mykey[7:] #REMOVE 'module.'
+    #                 new_keys.append(new_key)
+    #             new_dict = OrderedDict(list(zip(new_keys,values)))
+    #             model_G[key].load_state_dict(new_dict)
+    #         else:
+    #             logging.info(">> Does not exist {}".format(file))
+
+    #     for key in model_D.keys():
+    #         file = os.path.join(model_cfg.weight_path, f'{key}.pth')
+    #         if os.path.isfile(file):
+    #             logging.info(">> Success load {} weight".format(key))
+    #             model_load_dict = torch.load(file, map_location=device)
+    #             keys = model_load_dict.keys()
+    #             values = model_load_dict.values()
+
+    #             new_keys = []
+    #             for _key in keys:
+    #                 new_key = _key[7:] #REMOVE 'module.'
+    #                 new_keys.append(new_key)
+    #             new_dict = OrderedDict(list(zip(new_keys,values)))
+    #             model_D[key].load_state_dict(new_dict)
+    #         else:
+    #             logging.info(">> Does not exist {}".format(file))
+    # for key, val in model.items():
+    #     # if 'MLPHead' not in key:
+    #     model[key] = nn.DataParallel(val)
+    # for key, val in model_ema.items():
+    # #     if 'MLPHead' not in key:
+    #     model[key] = nn.DataParallel(val)       
+    #         model_ema[key] = nn.DataParallel(val)
+
+    # for key, val in model_D.items():
+    #     model_D[key] = nn.DataParallel(val)
+    #     model_D[key].to(device)
+    #     model_D[key].train()
+    #     parameter_D += list(val.parameters())
+    
+    # for key, val in model_F.items():
+    #     model_F[key] = nn.DataParallel(val)
+    #     model_F[key].to(device)
+    #     model_F[key].train()
+    #     parameter_F += list(val.parameters())
+
+    return model, model_ema
 
 def set_criterions(cfg: Any, device: str) -> Dict[str, Any]:
     """
@@ -228,28 +209,7 @@ def set_criterions(cfg: Any, device: str) -> Dict[str, Any]:
     criterions.GAN = utils.GANLoss().to(device)
     criterions.Idt = torch.nn.L1Loss().to(device)
     criterions.NCE = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu).to(device)
-    criterions.InstNCE = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu * cfg.DATASET.n_bbox).to(device)
-    criterions.Style_Div = torch.nn.L1Loss().to(device)
-    criterions.Cycle = torch.nn.L1Loss().to(device)
-    criterions.DClass = torch.nn.CrossEntropyLoss(ignore_index=-1).to(device)
-    return criterions
-
-def criterion_test(cfg: Any, device: str) -> Dict[str, Any]:
-    """
-    Create a dictionary of critererions for different loss functions used in the model.
-
-    Args:
-        cfg (object): Configuration object containing various parameters.
-        device (str): Device to be used for loss computation.
-
-    Returns:
-        dict: Dictionary containing different loss functions.
-    """
-    criterions = Munch()
-    criterions.GAN = utils.GANLoss().to(device)
-    criterions.Idt = torch.nn.L1Loss().to(device)
-    criterions.NCE = utils.PatchNCELoss(cfg.TEST.batch_size).to(device)
-    criterions.InstNCE = utils.PatchNCELoss(cfg.TEST.batch_size * cfg.DATASET.n_bbox).to(device)
+    criterions.InstNCE = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu * cfg.TRAIN.n_bbox).to(device)
     criterions.Style_Div = torch.nn.L1Loss().to(device)
     criterions.Cycle = torch.nn.L1Loss().to(device)
     criterions.DClass = torch.nn.CrossEntropyLoss(ignore_index=-1).to(device)
