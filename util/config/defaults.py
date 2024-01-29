@@ -5,7 +5,7 @@ from yacs.config import CfgNode as CN
 # -----------------------------------------------------------------------------
 
 _C = CN()
-_C.DIR = './weights'
+_C.DIR = "./weights"
 
 # -----------------------------------------------------------------------------
 # Dataset
@@ -13,16 +13,16 @@ _C.DIR = './weights'
 # dataset name
 _C.DATASET = CN()
 # dataset mode (e.g., single, aligned, unaligned, multi)
-_C.DATASET.mode = 'multi'
+_C.DATASET.mode = "multi"
 # path to images (should have subfolders images, seg_labels, domain_labels)
-_C.DATASET.root_dataset = './data/'
+_C.DATASET.root_dataset = "./data/"
 # txt file containing training image folder
-_C.DATASET.train_dir = './data/train_images'
+_C.DATASET.train_dir = "./data/train_images"
 # path to the reference images
-_C.DATASET.ref_dir = './data/ref_images/'
+_C.DATASET.ref_dir = "./data/ref_images/"
 # List of target domains
-_C.DATASET.target_domain_names = ['summer', 'winter', 'spring', 'autumn']
-# number of semantic classes 
+_C.DATASET.target_domain_names = ["summer", "winter", "spring", "autumn"]
+# number of semantic classes
 _C.DATASET.num_seg_class = 16
 # number of domains
 _C.DATASET.num_domains = 8
@@ -34,13 +34,13 @@ _C.DATASET.max_dataset_size = 200000
 # -----------------------------------------------------------------------------
 _C.MODEL = CN()
 # name of the model
-_C.MODEL.name = 'MDformer'
+_C.MODEL.name = "MDformer"
 # load pretrained weights, False if training from scratch
 _C.MODEL.load_weight = False
 # load optimizer, False if training from scratch
 _C.MODEL.load_optimizer = False
 # path of pretrained weights. If training from scratch, set this as empty string
-_C.MODEL.weight_path = ''
+_C.MODEL.weight_path = ""
 # weights to finetune net_decoder
 # _C.MODEL.weights_decoder = ''
 # number of input channels
@@ -89,19 +89,28 @@ _C.MODEL.TRANSFORMER.depth = 6
 _C.MODEL.TRANSFORMER.heads = 4
 # dimension of each head
 _C.MODEL.TRANSFORMER.mlp_dim = 4096
-
-_C.MODEL.SWINV2 = CN()
-_C.MODEL.SWINV2.PATCH_SIZE = 4
-_C.MODEL.SWINV2.IN_CHANS = 3
-_C.MODEL.SWINV2.EMBED_DIM = 96
-_C.MODEL.SWINV2.DEPTHS = [2, 2, 6, 2]
-_C.MODEL.SWINV2.NUM_HEADS = [3, 6, 12, 24]
-_C.MODEL.SWINV2.WINDOW_SIZE = 7
-_C.MODEL.SWINV2.MLP_RATIO = 4.
-_C.MODEL.SWINV2.QKV_BIAS = True
-_C.MODEL.SWINV2.APE = False
-_C.MODEL.SWINV2.PATCH_NORM = True
-
+# ------------------------------------------------------------------------------
+# SWIN Transformer parameters
+# ------------------------------------------------------------------------------
+_C.MODEL.SWIN = CN()
+# patch size
+_C.MODEL.SWIN.PATCH_SIZE = 4
+# embedding dimension
+_C.MODEL.SWIN.EMBED_DIM = 96
+# depth
+_C.MODEL.SWIN.DEPTHS = [2, 2, 6, 2]
+# number of heads
+_C.MODEL.SWIN.NUM_HEADS = [3, 6, 12, 24]
+# window sizes
+_C.MODEL.SWIN.WINDOW_SIZE = 7
+# mlp ratio
+_C.MODEL.SWIN.MLP_RATIO = 4.0
+# qkv bias
+_C.MODEL.SWIN.QKV_BIAS = True
+# qk scale
+_C.MODEL.SWIN.APE = False
+# use absolute position embedding in swin transformer
+_C.MODEL.SWIN.PATCH_NORM = True
 
 
 # -----------------------------------------------------------------------------
@@ -125,15 +134,15 @@ _C.TRAIN.end_epoch = 300
 # iterations of each epoch (irrelevant to batch size)
 _C.TRAIN.epoch_iters = 5000
 # optimizer
-_C.TRAIN.optim = 'Adam'
+_C.TRAIN.optim = "Adam"
 # momentum terms for Adam optimizer
 _C.TRAIN.optim_beta = (0.5, 0.999)
 # weight decay
 _C.TRAIN.weight_decay = 0.0001
 # learning rate
 _C.TRAIN.lr = 2e-4
-# indiviudal learning rate for encoder, generator and discriminator... 
-_C.TRAIN.lr_CE = 2e-4 
+# indiviudal learning rate for encoder, generator and discriminator...
+_C.TRAIN.lr_CE = 2e-4
 _C.TRAIN.lr_G = 2e-4
 _C.TRAIN.lr_D = 2e-4
 _C.TRAIN.lr_MN = 2e-6
@@ -163,8 +172,8 @@ _C.TRAIN.w_l_reg = 1.0
 # maximum number of bounding boxes
 _C.TRAIN.n_bbox = 4
 # image normalization type one of imagenet, default, none
-_C.TRAIN.img_norm = 'default'
-# frequency to save checkpoints 
+_C.TRAIN.img_norm = "default"
+# frequency to save checkpoints
 _C.TRAIN.save_epoch = 5
 # manual seed
 _C.TRAIN.seed = 304
@@ -173,7 +182,7 @@ _C.TRAIN.use_cuda = True
 # IDs of GPUs to use (e.g. [0, 1, 2] | use -1 for CPU)
 _C.TRAIN.gpu_ids = [0]
 # output path for log, weights and intermediate results
-_C.TRAIN.log_path = './weights'
+_C.TRAIN.log_path = "./weights"
 # distributed training
 _C.TRAIN.distributed = False
 # use label smoothing for discriminator
@@ -208,7 +217,7 @@ _C.TRAIN.PREPROCESS.grayscale = False
 # Visualization
 # ------------------------------------------------------------------------------
 _C.VISUAL = CN()
-#-------------------------------------------------------------------------------
+# -------------------------------------------------------------------------------
 # enable visualization using visdom
 _C.VISUAL.visdom = True
 # display size in visdom
@@ -218,11 +227,11 @@ _C.VISUAL.display_ncols = 4
 # window id of the web display
 _C.VISUAL.display_id = -1
 # visdom server
-_C.VISUAL.server = 'http://localhost'
+_C.VISUAL.server = "http://localhost"
 # visdom port
 _C.VISUAL.port = 8097
 # name of the visdom workspace
-_C.VISUAL.env = 'main'
+_C.VISUAL.env = "main"
 # frequency to save visualization results
 _C.VISUAL.save_results_freq = 1000
 # save intermediate training results to disk as html
@@ -245,20 +254,20 @@ _C.VAL.batch_size = 1
 # output visualization during validation
 _C.VAL.visualize = False
 # the checkpoint to evaluate on
-_C.VAL.checkpoint = 'epoch_20.pth'
+_C.VAL.checkpoint = "epoch_20.pth"
 
 # -----------------------------------------------------------------------------
 # Testing
 # -----------------------------------------------------------------------------
 _C.TEST = CN()
 # dir
-_C.TEST.dir = 'data/test_images'
+_C.TEST.dir = "data/test_images"
 # currently only supports 1
 _C.TEST.batch_size = 1
 # the checkpoint to test on
-_C.TEST.checkpoint = 'epoch_20.pth'
+_C.TEST.checkpoint = "epoch_20.pth"
 # folder to output visualization results
-_C.TEST.result = './'
+_C.TEST.result = "./"
 # epcch to load
 _C.TEST.load_epoch = 20
 # batch size
@@ -266,7 +275,7 @@ _C.TEST.batch_size = 1
 # number of images
 _C.TEST.num_images = 1000
 # target_domains
-_C.TEST.target_domains = ['summer', 'winter', 'spring', 'autumn']
+_C.TEST.target_domains = ["summer", "winter", "spring", "autumn"]
 # psi for style mixing
 _C.TEST.psi = 1.0
 # number of images per domain
