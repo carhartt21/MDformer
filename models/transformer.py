@@ -121,7 +121,7 @@ class AdaIn_Transformer(nn.Module):
         return x, w
 
 
-class Transformer_Aggregator(nn.Module):
+class EmbeddingTransformer(nn.Module):
     # TODO: Add support for multiple layers
 
     def __init__(
@@ -150,7 +150,7 @@ class Transformer_Aggregator(nn.Module):
             mlp_dim: mlp dimension
             vis: visualize attention maps
         """
-        super(Transformer_Aggregator, self).__init__()
+        super(EmbeddingTransformer, self).__init__()
         self.input_size = input_size
         self.patch_size = patch_size
         self.patch_embed_C = patch_embed_C
