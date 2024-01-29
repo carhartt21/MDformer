@@ -20,6 +20,39 @@ class PreInstanceNorm(nn.Module):
 
     def forward(self, x, **kwargs):
         return self.fn(self.norm(x), **kwargs)
+    
+class Swin_Transformer(nn.Module):
+    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0., vis=False):
+        super().__init__()
+        self.layers = nn.ModuleList([])
+        self.vis = vis
+        for _ in range(depth):
+            self.layers.append(nn.ModuleList([
+                PreInstanceNorm(dim, vit.Attention(dim, heads = heads, dim_head = dim_head, dropout = dropout, vis = vis)),
+                PreInstanceNorm(dim, vit.FeedForward(dim, mlp_dim, dropout = dropout))
+            ]))
+        self.hooks = []
+        self.features = None
+
+    def set_hooks(self, hooks):
+        self.hooks = hooks
+
+    def forward(self, x):
+        i = 0
+        w = []
+        ll = []
+        for attn, ff in self.layers:
+            _x, _w = attn(x)
+            x += _x 
+            if self.vis:
+                w.append(_w)      
+            x = ff(x) + x
+            if i in self.hooks:
+                ll.append(x)
+            i += 1
+
+        self.features = tuple(ll)
+        return x, w
 
 class AdaIn_Transformer(nn.Module):
     def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout = 0., vis=False):
