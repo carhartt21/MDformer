@@ -662,6 +662,11 @@ class PatchNCELoss(nn.Module):
         l_neg_curbatch = torch.bmm(feat_q, feat_k.transpose(2, 1)) 
 
         diagonal = torch.eye(npatches, device=feat_q.device, dtype=self.mask_dtype)[None, :, :]
+        # # continue helper
+        #  for i in range(batch_size):
+        #     # Selecting negative patches within the same sample
+        #     neg_indices = self.get_negative_indices(num_patches, i, batch_size)
+        #     negatives.append(feat_k[neg_indices])
         l_neg_curbatch.masked_fill_(diagonal, -10.0)
         l_neg = l_neg_curbatch.view(-1, npatches)
 
