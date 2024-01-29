@@ -90,6 +90,18 @@ _C.MODEL.TRANSFORMER.heads = 4
 # dimension of each head
 _C.MODEL.TRANSFORMER.mlp_dim = 4096
 
+_C.MODEL.SWINV2 = CN()
+_C.MODEL.SWINV2.PATCH_SIZE = 4
+_C.MODEL.SWINV2.IN_CHANS = 3
+_C.MODEL.SWINV2.EMBED_DIM = 96
+_C.MODEL.SWINV2.DEPTHS = [2, 2, 6, 2]
+_C.MODEL.SWINV2.NUM_HEADS = [3, 6, 12, 24]
+_C.MODEL.SWINV2.WINDOW_SIZE = 7
+_C.MODEL.SWINV2.MLP_RATIO = 4.
+_C.MODEL.SWINV2.QKV_BIAS = True
+_C.MODEL.SWINV2.APE = False
+_C.MODEL.SWINV2.PATCH_NORM = True
+
 
 
 # -----------------------------------------------------------------------------
@@ -164,6 +176,8 @@ _C.TRAIN.gpu_ids = [0]
 _C.TRAIN.log_path = './weights'
 # distributed training
 _C.TRAIN.distributed = False
+# use label smoothing for discriminator
+_C.TRAIN.smooth_label = False
 
 # ------------------------------------------------------------------------------
 # preprocessing options
