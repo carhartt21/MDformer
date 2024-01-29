@@ -154,18 +154,18 @@ class StarFormer(nn.Module):
                     cfg=cfg,
                     from_lat=True)
                 # utils.set_requires_grad(model.Discriminator.module, True)
-                # self._reset_grad()
-                # total_D_loss.backward()
-                # optimizer.Discriminator.step()                
+                self._reset_grad()
+                total_D_loss.backward()
+                optimizer.Discriminator.step()                
                 
                 #from reference image
-                D_loss, D_losses_ref = loss.compute_D_loss(inputs=inputs, 
+                total_D_loss, D_losses_ref = loss.compute_D_loss(inputs=inputs, 
                     refs=refs,  
                     model=model,
                     criterions=criterions,
                     cfg=cfg, 
                     from_lat=False)                
-                total_D_loss += D_loss
+                
                 self._reset_grad()
                 total_D_loss.backward()
                 optimizer.Discriminator.step()
