@@ -201,7 +201,7 @@ class SegMaskToPatches:
         self.patch_size = patch_size
         self.min_coverage = min_coverage
 
-    def __call__(self, sample):
+    def __call__(self, seg_masks):
         """
         Convert the segmentation map in the input sample to tensor.
 
@@ -211,7 +211,7 @@ class SegMaskToPatches:
         Returns:
             The transformed sample.
         """
-        height, width = sample.seg_masks.shape[-2] // 4, sample.seg_masks.shape[-1] // 4
+        height, width = seg_masks.shape[-2] // 4, seg_masks.shape[-1] // 4
         assert (
             height == width
         ), "Segmentation map height {} and width {} are not equal".format(height, width)
@@ -220,35 +220,36 @@ class SegMaskToPatches:
         ), "Segmenation map {}x{} is not divisible by patch size {}".format(
             height, width, self.patch_size
         )
-
         n_patches = height // self.patch_size
         # Get list of unique classes in the segmentation map excluding 0
-        _classes = torch.unique(sample.seg_masks[sample.seg_masks != 0], sorted=True)
+        _classes = torch.unique(seg_masks[seg_masks != 0], sorted=True)
         # Calculate the minimum number of pixels that should be covered by the segmentation map in each patch
         min_pixels = self.patch_size**2 * self.min_coverage
         # Create a grid to hold the classes assigned to each patch
         grid = torch.zeros((n_patches, n_patches), dtype=torch.int32)
-
+        patch_masks = torch.zeros(seg_masks.shape[0], n_patches**2, dtype=torch.int32)          
+        # iterate over the batch
+        for b in range(seg_masks.shape[0]):
         # Iterate over each cell in the grid
-        for i in range(n_patches):
-            for j in range(n_patches):
-                top = i * self.patch_size
-                bottom = (i + 1) * self.patch_size
-                left = j * self.patch_size
-                right = (j + 1) * self.patch_size
-                # Iterate over each class in the segmentation map
-                for c in _classes:
-                    # Count the number of pixels covered by the current class in the current cell
-                    pixels_covered = torch.sum(
-                        sample.seg_masks[:, top:bottom, left:right] == c
-                    )
+            for i in range(n_patches):
+                for j in range(n_patches):
+                    top = i * self.patch_size
+                    bottom = (i + 1) * self.patch_size
+                    left = j * self.patch_size
+                    right = (j + 1) * self.patch_size
+                    # Iterate over each class in the segmentation map
+                    for c in _classes:
+                        # Count the number of pixels covered by the current class in the current cell
+                        pixels_covered = torch.sum(
+                            seg_masks[:, top:bottom, left:right] == c
+                        )
 
-                    # If the number of pixels covered is greater than or equal to the minimum required, assign the class to the current cell
-                    if pixels_covered >= min_pixels:
-                        grid[i, j] = c
+                        # If the number of pixels covered is greater than or equal to the minimum required, assign the class to the current cell
+                        if pixels_covered >= min_pixels:
+                            grid[i, j] = c
 
-        sample.seg_masks = grid.view(-1).to(torch.int32)
-        return sample
+            patch_masks[b] = grid.view(-1).to(torch.int32)
+        return patch_masks
 
 
 class SegMaskToBBoxes:

@@ -4,10 +4,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision.ops.roi_align as roi_align  # Instance Aware
 from einops import repeat, rearrange
+from torchvision import transforms
 
 from . import vit
 from . import blocks
+from utils import _ntuple
 import logging
+import math
+from util.custom_transforms import SegMaskToPatches
 
 # Enable debug logging
 # logging.basicConfig(level=logging.DEBUG)
@@ -121,7 +125,80 @@ class AdaIn_Transformer(nn.Module):
         return x, w
 
 
-class EmbeddingTransformer(nn.Module):
+class Transformer(nn.Module):
+    def __init__(
+        self,
+        input_size: int = 88,
+        patch_size: int = 8,
+        patch_embed_C: int = 1024,
+        sem_embed_C: int = 64,
+        feat_C: int = 256,
+        depth: int = 6,
+        heads: int = 4,
+        mlp_dim: int = 4096,
+        num_sem_classes: int = 16,
+        num_classes: int = 16,
+        transformer_type: str = "vit",
+        vis: bool = False,
+    ):
+        super(Transformer, self).__init__()
+        self.transformer_type = transformer_type
+        self.vis = vis
+        self.total_embed_C = patch_embed_C + sem_embed_C
+                
+        self.embedding = Embedding(
+            input_size=input_size,
+            patch_size=patch_size,
+            patch_embed_C=patch_embed_C,
+            sem_embed_C=sem_embed_C,
+            feat_C=feat_C,
+            depth=depth,
+            heads=heads,
+            mlp_dim=mlp_dim,
+            num_sem_classes=num_sem_classes,
+            num_classes=num_classes,
+            vis=vis,
+        )
+
+        # Transformer
+        if self.transformer_type == "vit":
+            self.transformer = AdaIn_Transformer(
+                dim=self.total_embed_C,
+                depth=depth,
+                heads=heads,
+                dim_head=feat_C,
+                mlp_dim=mlp_dim,
+                dropout=0.0,
+                vis=self.vis,
+            )
+        elif self.transformer_type == "swin":
+            self.transformer = Swin_Transformer(
+                dim=self.total_embed_C,
+                depth=depth,
+                heads=heads,
+                dim_head=feat_C,
+                mlp_dim=mlp_dim,
+                dropout=0.0,
+                vis=self.vis,
+            )
+        else:
+            raise ValueError("Transformer type not supported.")
+
+    def forward(self, x, sem_embed=True, sem_labels=None, bbox_info=None, n_bbox=-1):
+        embed_x = self.embedding(x, sem_embed, sem_labels, bbox_info, n_bbox)
+        # Pass the modified 'x' through the transformer layer
+        out, weights = self.transformer(embed_x)
+
+        # Extract the aggregated features and boxes
+        if n_bbox > 0:
+            aggregated_feat, aggregated_box = out[:, :-n_bbox, :], out[:, -n_bbox:, :]
+        else:
+            # If n_bbox <= 0, return only the aggregated features
+            aggregated_feat, aggregated_box = out, None
+
+        return aggregated_feat, aggregated_box, weights
+
+class Embedding(nn.Module):
     # TODO: Add support for multiple layers
 
     def __init__(
@@ -150,7 +227,7 @@ class EmbeddingTransformer(nn.Module):
             mlp_dim: mlp dimension
             vis: visualize attention maps
         """
-        super(EmbeddingTransformer, self).__init__()
+        super(Embedding, self).__init__()
         self.input_size = input_size
         self.patch_size = patch_size
         self.patch_embed_C = patch_embed_C
@@ -159,14 +236,14 @@ class EmbeddingTransformer(nn.Module):
         stem = True if patch_size == 8 else False
 
         # Patch Embedding
-        self.patch_embed = blocks.PatchEmbedding(
+        self.patch_embed = PatchEmbedding(
             input_size=input_size,
             patch_size=patch_size,
             in_chans=feat_C,
             embed_dim=self.patch_embed_C,
             STEM=stem,
         )
-        self.box_embed = blocks.PatchEmbedding(
+        self.box_embed = PatchEmbedding(
             input_size=patch_size,
             patch_size=patch_size,
             in_chans=feat_C,
@@ -175,7 +252,7 @@ class EmbeddingTransformer(nn.Module):
         )
 
         # Semantic Embedding
-        self.sem_embed = blocks.SemanticEmbedding(
+        self.sem_embed = SemanticEmbedding(
             num_sem_classes=num_sem_classes, embed_dim=self.sem_embed_C
         )
         # self.cls_token = nn.Parameter(torch.randn(1, 1, self.patch_embed_C+self.sem_embed_C))
@@ -185,29 +262,29 @@ class EmbeddingTransformer(nn.Module):
         assert (
             self.total_embed_C % 4 == 0
         ), "The number of total embedding channels must be divisible by 4."
-        self.pos_embed_x = blocks.PositionalEncoding(
+        self.pos_embed_x = PositionalEncoding(
             input_dim=self.total_embed_C // 4, dropout=0.0, max_len=input_size
         )
-        self.pos_embed_y = blocks.PositionalEncoding(
+        self.pos_embed_y = PositionalEncoding(
             input_dim=self.total_embed_C // 4, dropout=0.0, max_len=input_size
         )
-        self.pos_embed_h = blocks.PositionalEncoding(
+        self.pos_embed_h = PositionalEncoding(
             input_dim=self.total_embed_C // 4, dropout=0.0, max_len=input_size
         )
-        self.pos_embed_w = blocks.PositionalEncoding(
+        self.pos_embed_w = PositionalEncoding(
             input_dim=self.total_embed_C // 4, dropout=0.0, max_len=input_size
         )
 
-        self.block_pos_embed_x = blocks.PositionalEncoding(
+        self.block_pos_embed_x = PositionalEncoding(
             input_dim=self.patch_embed_C // 4, dropout=0.0, max_len=input_size
         )
-        self.block_pos_embed_y = blocks.PositionalEncoding(
+        self.block_pos_embed_y = PositionalEncoding(
             input_dim=self.patch_embed_C // 4, dropout=0.0, max_len=input_size
         )
-        self.block_pos_embed_h = blocks.PositionalEncoding(
+        self.block_pos_embed_h = PositionalEncoding(
             input_dim=self.patch_embed_C // 4, dropout=0.0, max_len=input_size
         )
-        self.block_pos_embed_w = blocks.PositionalEncoding(
+        self.block_pos_embed_w = PositionalEncoding(
             input_dim=self.patch_embed_C // 4, dropout=0.0, max_len=input_size
         )
 
@@ -234,21 +311,6 @@ class EmbeddingTransformer(nn.Module):
             )
             .flatten(2)
             .transpose(-1, -2)
-        )
-
-        # Add empty embedding for cls_token
-        # cls_embed = torch.zeros(1, 1, self.total_embed_C)
-        # self.pos_embed = torch.cat((cls_embed, self.pos_embed), dim=1)
-
-        # Transformer
-        self.transformer = AdaIn_Transformer(
-            dim=self.total_embed_C,
-            depth=depth,
-            heads=heads,
-            dim_head=feat_C,
-            mlp_dim=mlp_dim,
-            dropout=0.0,
-            vis=self.vis,
         )
 
     def extract_box_feature(self, out, box, n_bbox):
@@ -321,7 +383,7 @@ class EmbeddingTransformer(nn.Module):
         ).squeeze()
 
         box += torch.cat((box_pos_embed[y_coord, x_coord], box_pos_embed[h, w]), dim=2)
-        box = self.sem_embed(box, bbox_info[:, :, 0])
+        box = self.sem_embed(box, bbox_info[:, :, 0], bbox=True)
         added_out = torch.cat((out, box), dim=1)
 
         return added_out
@@ -375,24 +437,15 @@ class EmbeddingTransformer(nn.Module):
                 None if n_bbox <= 0.
         """
         # Apply the patch embedding
-        patch_embed_x = self.patch_embed(x)
-
-        # Extract class tokens
-        # cls_token = repeat(self.cls_token, '1 n d -> b n d', b=(x.shape[0]))
+        patch_embed_x = self.patch_embed(x).to(x.device)
 
         # Add semantic embeddings
-        # if sem_embed:
-        if sem_labels is None:
-            # raise ValueError("Semantic labels are required when sem_embed is True.")
-            sem_labels = torch.zeros(
-                patch_embed_x.shape[0], patch_embed_x.shape[1], dtype=torch.long
-            ).to(x.device)
-        # Add semantic embeddings to 'patch_embed_x'
-        # if bbox_info is not None:
-        #     sem_labels = torch.cat([sem_labels, bbox_info[:,:,0]], dim=1)
-        patch_embed_x = self.sem_embed(patch_embed_x, sem_labels)
-
-        # patch_embed_x = torch.cat((cls_token, patch_embed_x), dim=1)
+        if sem_embed:
+            if sem_labels is None:
+                sem_labels = torch.zeros(
+                    patch_embed_x.shape[0], patch_embed_x.shape[1], dtype=torch.long
+                ).to(x.device)
+            patch_embed_x = self.sem_embed(patch_embed_x, sem_labels)
 
         patch_embed_x = patch_embed_x + self.pos_embed.to(x.device)
 
@@ -400,18 +453,153 @@ class EmbeddingTransformer(nn.Module):
         if bbox_info is not None:
             box_feat = self.extract_box_feature(x, bbox_info, n_bbox)
             patch_embed_x = self.add_box(patch_embed_x, box_feat, bbox_info, n_bbox)
-
+        
+        return patch_embed_x
         # Concatenate class tokens and embedded features
         # Add positional embeddings except for the box embeddings
 
-        # Pass the modified 'x' through the transformer layer
-        out, weights = self.transformer(patch_embed_x)
 
-        # Extract the aggregated features and boxes
-        if n_bbox > 0:
-            aggregated_feat, aggregated_box = out[:, :-n_bbox, :], out[:, -n_bbox:, :]
-        else:
-            # If n_bbox <= 0, return only the aggregated features
-            aggregated_feat, aggregated_box = out, None
 
-        return aggregated_feat, aggregated_box, weights
+
+def posemb_sincos_2d(patches, temperature=10000, dtype=torch.float32):
+    _, h, w, dim, device, dtype = *patches.shape, patches.device, patches.dtype
+
+    y, x = torch.meshgrid(
+        torch.arange(h, device=device), torch.arange(w, device=device), indexing="ij"
+    )
+    assert (dim % 4) == 0, "feature dimension must be multiple of 4 for sincos emb"
+    omega = torch.arange(dim // 4, device=device) / (dim // 4 - 1)
+    omega = 1.0 / (temperature**omega)
+
+    y = y.flatten()[:, None] * omega[None, :]
+    x = x.flatten()[:, None] * omega[None, :]
+    pe = torch.cat((x.sin(), x.cos(), y.sin(), y.cos()), dim=1)
+    return pe.type(dtype)
+
+
+class PositionalEncoding(nn.Module):
+    """Positional Encoding module injects information about the relative position of the tokens in the sequence.
+
+    Args:
+      input_dim:    dimension of embeddings
+      dropout:      randomly zeroes-out some of the input
+      max_length:   max sequence length
+    """
+
+    def __init__(self, input_dim: int, dropout: float = 0.1, max_len: int = 5000):
+        # input_dim: dimension of the model
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        # Compute the positional encodings once in log space.
+        position = torch.arange(max_len).unsqueeze(1)
+        # 1,5000
+        div_term = torch.exp(
+            torch.arange(0, input_dim, 2) * (-math.log(10000.0) / input_dim)
+        )
+        pos_emb = torch.zeros(max_len, 1, input_dim)
+        # 5000,1,1024
+        # calc sine on even indices
+        pos_emb[:, 0, 0::2] = torch.sin(position * div_term)
+        # 5000,1,1024
+        # calc cosine on odd indices
+        pos_emb[:, 0, 1::2] = torch.cos(position * div_term)
+
+        pos_emb = pos_emb.permute(1, 0, 2)
+
+        # registered buffers are saved in state_dict but not trained by the optimizer
+        self.register_buffer("pos_emb", pos_emb)
+
+    def forward(self) -> torch.Tensor:
+        """
+        Forward pass of PositionalEncoding module.
+        """
+        # self.pos_emb = self.pos_emb.permute(1, 0, 2)
+        return self.dropout(self.pos_emb)
+
+
+class PatchEmbedding(nn.Module):
+    """2D Image to Patch Embedding.
+    Patch embedding layer used in Vision Transformer (https://arxiv.org/abs/2010.11929)
+    """
+
+    def __init__(
+        self,
+        input_size=96,
+        patch_size=8,
+        in_chans=256,
+        embed_dim=768,
+        norm_layer=None,
+        STEM=True,
+    ):
+        super().__init__()
+        # image and patch size to tuple of 2 integers
+        to_2tuple = _ntuple(2)
+        input_size = to_2tuple(input_size)
+        patch_size = to_2tuple(patch_size)
+        self.input_size = input_size
+        # self.patch_size = patch_size
+        # grid size is the number of patches in the image
+        # self.grid_size = (input_size[0] // patch_size[0], input_size[1] // patch_size[1])
+        # self.num_patches = self.grid_size[0] * self.grid_size[1]
+
+        # if STEM is true, we use a stem conv layer to project the input image to a feature map of size embed_dim
+        # stem conv layer is a 3x3 conv layer with stride 2, followed by a 3x3 conv layer with stride 2, followed by a 3x3 conv layer with stride 2, followed by a 1x1 conv layer
+        if STEM:
+            hidden_dim = embed_dim // in_chans
+            self.proj = nn.Sequential(
+                nn.Conv2d(
+                    in_chans,
+                    in_chans * hidden_dim // 2,
+                    kernel_size=3,
+                    stride=2,
+                    padding=1,
+                ),
+                nn.Conv2d(
+                    in_chans * hidden_dim // 2,
+                    in_chans * hidden_dim // 2,
+                    kernel_size=3,
+                    stride=2,
+                    padding=1,
+                ),
+                nn.Conv2d(
+                    in_chans * hidden_dim // 2,
+                    embed_dim,
+                    kernel_size=3,
+                    stride=2,
+                    padding=1,
+                ),
+                nn.Conv2d(embed_dim, embed_dim, kernel_size=1),
+            )
+        else:  # we use standart ViT patch embedding layer
+            self.proj = nn.Conv2d(
+                in_chans, embed_dim, kernel_size=patch_size, stride=patch_size
+            )
+        self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
+
+    def forward(self, x):  # x: b*2,256,64,64 / b*2*30,256,8,8
+        _, _, H, W = x.shape
+        assert (
+            H == self.input_size[0] and W == self.input_size[1]
+        ), "Input image size ({}*{}) doesn't match model ({}*{})".format(
+            H, W, self.input_size[0], self.input_size[1]
+        )
+        x = self.proj(x).flatten(2).transpose(1, 2)
+        # proj:4,1024,8,8 #fl:4,1024,64
+        # proj:120,1024,1,1  fl:120,1024,1 tr:120,1,1024
+        x = self.norm(x)
+        return x
+
+
+class SemanticEmbedding(nn.Module):
+    def __init__(self, num_sem_classes, embed_dim, patch_size=8, min_coverage=0.6):
+        super().__init__()
+        self.embedding = nn.Embedding(num_sem_classes, embed_dim)
+        self.to_patches = transforms.Compose([SegMaskToPatches(patch_size=patch_size, min_coverage=min_coverage)])
+
+    def forward(self, x, sem_labels, bbox=False):
+        if not bbox:
+            sem_labels = self.to_patches(sem_labels).to((x.device))
+        semantic_emb = self.embedding(sem_labels.to(torch.long))
+        x = torch.cat([x, semantic_emb], dim=-1)
+        return x
