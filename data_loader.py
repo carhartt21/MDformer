@@ -335,7 +335,7 @@ def get_train_loader(
             ct.ToTensor(),
             ct.Normalize(mean=mean, std=std),
             ct.SegMaskToBBoxes([1, 7, 14], n_bbox=max_n_bbox),
-            ct.SegMaskToPatches(8, seg_threshold),
+            # ct.SegMaskToPatches(8, seg_threshold),
         ]
     )
     dataset = MultiDomainDataset(
@@ -445,7 +445,7 @@ def get_test_loader(
             ct.RandomCrop(img_size),
             ct.ToTensor(),
             ct.Normalize(mean=mean, std=std),
-            ct.SegMaskToPatches(patch_size, seg_threshold),
+            # ct.SegMaskToPatches(patch_size, seg_threshold),
         ]
     )
 
@@ -492,7 +492,7 @@ def get_eval_loader(
             ct.RandomCrop(img_size),
             ct.ToTensor(),
             ct.Normalize(mean=mean, std=std),
-            ct.SegMaskToPatches(patch_size, seg_threshold),
+            # ct.SegMaskToPatches(patch_size, seg_threshold),
         ]
     )
 
