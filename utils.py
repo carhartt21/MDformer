@@ -16,6 +16,8 @@ import json
 import random
 import torch.nn.functional as F
 from einops import repeat, rearrange
+from itertools import repeat
+import collections.abc
 
 
 ##################################### Visualize ##################################### 
@@ -34,6 +36,16 @@ def domain_to_image_tensor(d_trg:torch.Tensor, target_domains:list, img_size=(32
     for i in range(d_trg.shape[0]):
         domain_imgs.append(text_to_img(target_domains[domains[i]], img_size))
     return torch.stack(domain_imgs, dim=0).to(d_trg.device)
+
+
+# Convert a number to a tuple of n
+def _ntuple(n):
+    def parse(x):
+        if isinstance(x, collections.abc.Iterable):
+            return x
+        return tuple(repeat(x, n))
+
+    return parse
 
 
 
@@ -650,7 +662,6 @@ class PatchNCELoss(nn.Module):
         batchSize = feat_q.shape[0] 
         dim = feat_q.shape[1] 
         feat_k = feat_k.detach()
-
         l_pos = torch.bmm(feat_q.view(batchSize, 1, -1), feat_k.view(batchSize, -1, 1))
         l_pos = l_pos.view(batchSize, 1)
 
@@ -669,70 +680,11 @@ class PatchNCELoss(nn.Module):
         #     negatives.append(feat_k[neg_indices])
         l_neg_curbatch.masked_fill_(diagonal, -10.0)
         l_neg = l_neg_curbatch.view(-1, npatches)
-
         out = torch.cat((l_pos, l_neg), dim=1) / self.nce_T
-
         loss = self.cross_entropy_loss(out, torch.zeros(out.size(0), dtype=torch.long,
                                                         device=feat_q.device))
-
         return loss
     
-
-class SemPatchNCELoss(nn.Module):
-    def __init__(self, batch_size, nce_T=0.07):
-        """
-        PatchNCELoss is a custom loss function for patch-based contrastive learning.
-
-        Args:
-            batch_size (int): The batch size of the input data.
-            nce_T (float, optional): The temperature parameter for the loss calculation. Defaults to 0.07.
-        """
-        super().__init__()
-        self.batch_size = batch_size
-        self.nce_T = nce_T
-        self.cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction='none')
-        self.mask_dtype = torch.uint8 if version.parse(torch.__version__) < version.parse('1.2.0') else torch.bool
-
-    def forward(self, feat_q, feat_k):
-        """
-        Forward pass of the PatchNCELoss.
-
-        Args:
-            feat_q (torch.Tensor): The query features.
-            feat_k (torch.Tensor): The key features.
-
-        Returns:
-            torch.Tensor: The computed loss.
-        """
-        batchSize = feat_q.shape[0] 
-        dim = feat_q.shape[1] 
-        feat_k = feat_k.detach()
-
-        l_pos = torch.bmm(feat_q.view(batchSize, 1, -1), feat_k.view(batchSize, -1, 1))
-        l_pos = l_pos.view(batchSize, 1)
-
-        batch_dim_for_bmm = self.batch_size
-
-        feat_q = feat_q.view(batch_dim_for_bmm, -1, dim)
-        feat_k = feat_k.view(batch_dim_for_bmm, -1, dim)
-        npatches = feat_q.size(1) 
-        l_neg_curbatch = torch.bmm(feat_q, feat_k.transpose(2, 1)) 
-
-        diagonal = torch.eye(npatches, device=feat_q.device, dtype=self.mask_dtype)[None, :, :]
-        # # continue helper
-        #  for i in range(batch_size):
-        #     # Selecting negative patches within the same sample
-        #     neg_indices = self.get_negative_indices(num_patches, i, batch_size)
-        #     negatives.append(feat_k[neg_indices])
-        l_neg_curbatch.masked_fill_(diagonal, -10.0)
-        l_neg = l_neg_curbatch.view(-1, npatches)
-
-        out = torch.cat((l_pos, l_neg), dim=1) / self.nce_T
-
-        loss = self.cross_entropy_loss(out, torch.zeros(out.size(0), dtype=torch.long,
-                                                        device=feat_q.device))
-
-        return loss    
 
 
 class INSTANCENCELoss(nn.Module):
@@ -802,7 +754,7 @@ class SemNCELoss(nn.Module):
         self.cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction='none')
         self.mask_dtype = torch.uint8 if version.parse(torch.__version__) < version.parse('1.2.0') else torch.bool
 
-    def forward(self, feat_q, feat_k):
+    def forward(self, feat_q, feat_k, feat_k_pos, feat_k_neg):
         """
         Forward pass of the PatchNCELoss.
 
@@ -813,29 +765,31 @@ class SemNCELoss(nn.Module):
         Returns:
             torch.Tensor: The computed loss.
         """
+        logging.info(f'>>>>SemNCE forward pass, batch_size: {feat_q.shape[0] }')
         batchSize = feat_q.shape[0] 
         loss = []
         for mini_batch in range(batchSize):
-            feat_q = feat_q[mini_batch].detach()
-            dim = feat_q.shape[0] 
-            feat_k = feat_k[mini_batch].detach()
+            b_feat_q = feat_q[mini_batch].detach()
+            b_feat_k = feat_k[mini_batch].detach()            
+            dim = b_feat_q.shape[1] 
+            num_patch = b_feat_q.shape[0]
+            # feat_q = feat_q.view(-1, dim)
+            # feat_k = feat_k.view(-1, dim)            
+            b_feat_k_pos = feat_k_pos[mini_batch].detach().view(num_patch, -1, dim)
+            b_feat_k_neg = feat_k_neg[mini_batch].detach().view(num_patch, -1, dim)
+            l_same = torch.matmul(b_feat_q.view(-1, 1, dim), b_feat_k.view(-1, dim, 1))
+            l_same = l_same.view(-1, 1)
+            b_feat_q = b_feat_q.unsqueeze(1)
+            l_pos = torch.bmm(b_feat_q, b_feat_k_pos.transpose(1, 2))
+            l_pos = l_pos.squeeze(1)
 
-            l_pos = torch.matmul(feat_q[:, 0], feat_k[:, 0])
-            # l_pos = l_pos.view(batchSize, 1)
+            l_neg = torch.bmm(b_feat_q, b_feat_k_neg.transpose(1, 2))
+            l_neg = l_neg.squeeze(1)
 
-            feat_q = feat_q.view(-1, dim)
-            feat_k = feat_k.view(-1, dim)
-            n_neg = feat_q.size(0) 
-            l_neg_cur = torch.matmul(feat_q, feat_k.transpose(2, 1)) 
-
-            # diagonal = torch.eye(npatches, device=feat_q.device, dtype=self.mask_dtype)[None, :, :]
-            # l_neg_curbatch.masked_fill_(diagonal, -10.0)
-            l_neg = l_neg_cur.view(-1, n_neg)
-
-            out = torch.cat((l_pos, l_neg), dim=1) / self.nce_T
+            out = torch.cat((l_same, l_pos, l_neg), dim=1) / self.nce_T
 
             loss += self.cross_entropy_loss(out, torch.zeros(out.size(0), dtype=torch.long,
                                                             device=feat_q.device))
 
-        return (loss/batchSize).mean()
+        return (sum(loss)/batchSize)
     
