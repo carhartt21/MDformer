@@ -9,8 +9,6 @@ from torch.utils.data import DataLoader
 import numpy as np
 from collections import OrderedDict
 
-from utils import user_scattered_collate
-
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
@@ -75,7 +73,7 @@ def build_model(cfg):
                                                         style_dim=model_cfg.style_dim, 
                                                         num_domains=num_domains))
     logging.info(">> Building the Transformer")
-    Transformer = nn.DataParallel(models.EmbeddingTransformer(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
+    Transformer = nn.DataParallel(models.Transformer(input_size=model_cfg.img_size[0]//model_cfg.n_downsampling**2, 
                                                                  patch_size=model_cfg.patch_size, 
                                                                  patch_embed_C=model_cfg.TRANSFORMER.embed_C, 
                                                                  sem_embed_C=model_cfg.sem_embed_dim,
@@ -106,6 +104,7 @@ def build_model(cfg):
     logging.info(">> Building the MLP Heads")
     if (cfg.TRAIN.w_NCE>0.0):
         MLPHead = nn.DataParallel(models.MLPHead())
+        MLPHead2 = nn.DataParallel(models.NPMLPHead())
     if (cfg.TRAIN.w_Instance_NCE>0.0):
         MLPHeadInst = nn.DataParallel(models.MLPHead())
 
@@ -113,11 +112,7 @@ def build_model(cfg):
     StyleEncoder_ema = copy.deepcopy(StyleEncoder)
     Transformer_ema = copy.deepcopy(Transformer)
     Generator_ema = copy.deepcopy(Generator)
-    MLPAdain_ema = copy.deepcopy(MLPAdain)
     MappingNetwork_ema = copy.deepcopy(MappingNetwork)
-    Discriminator_ema = copy.deepcopy(Discriminator)
-    MLPHead_ema = copy.deepcopy(MLPHead)
-    MLPHeadInst_ema = copy.deepcopy(MLPHeadInst)
 
     model= Munch(ContentEncoder=ContentEncoder,
                     StyleEncoder=StyleEncoder,
@@ -127,6 +122,7 @@ def build_model(cfg):
                     MappingNetwork=MappingNetwork,
                     Discriminator=Discriminator,
                     MLPHead=MLPHead,
+                    MLPHead2=MLPHead2,
                     MLPHeadInst=MLPHeadInst)
     
 
@@ -209,6 +205,7 @@ def set_criterions(cfg: Any, device: str) -> Dict[str, Any]:
     criterions.GAN = utils.GANLoss().to(device)
     criterions.Idt = torch.nn.L1Loss().to(device)
     criterions.NCE = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu).to(device)
+    criterions.SemNCE = utils.SemNCELoss(cfg.TRAIN.batch_size_per_gpu).to(device)
     criterions.InstNCE = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu * cfg.TRAIN.n_bbox).to(device)
     criterions.Style_Div = torch.nn.L1Loss().to(device)
     criterions.Cycle = torch.nn.L1Loss().to(device)

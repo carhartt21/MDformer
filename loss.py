@@ -46,7 +46,7 @@ def model_generation(
     )
     if "bbox" in inputs and n_bbox != -1:
         features += [
-            model.Transformer.module.extract_box_feature(
+            model.Transformer.module.embedding.extract_box_feature(
                 feat_content, inputs.bbox, n_bbox
             )
         ]
@@ -202,25 +202,37 @@ def compute_G_loss(
             fake_img, cfg.MODEL.feat_layers
         )
         if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0:
-            fake_box_feature = model.Transformer.module.extract_box_feature(
+            fake_box_feature = model.Transformer.module.embedding.extract_box_feature(
                 fake_feat_content, inputs.bbox, cfg.TRAIN.n_bbox
             )
-
+            
     if cfg.TRAIN.w_NCE > 0.0:
         G_losses.NCE_loss = cfg.TRAIN.w_NCE * compute_NCE_loss(
-            fake_features,
-            features,
-            model.MLPHead,
-            criterions.NCE,
-            cfg.MODEL.num_patches,
+            feat_q=features,
+            feat_k=features,
+            model=model.MLPHead,
+            criterionNCE=criterions.NCE,
+            num_patches=128
         )
+
+
+    # if cfg.TRAIN.w_NCE > 0.0:
+    #     G_losses.NCE_loss = cfg.TRAIN.w_NCE * compute_SemNCE_loss(
+    #         feat_q=fake_features,
+    #         feat_k=features,
+    #         model=model.MLPHead2,
+    #         criterionNCE=criterions.SemNCE,
+    #         num_patches=cfg.MODEL.num_patches,
+    #         seg=inputs.seg
+    #     )
+        
     if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0:
         valid_box = torch.where(inputs.bbox[:, :, 0] > 0, True, False).view(-1)
         if valid_box[valid_box == True].shape[0] == 0.0:
             G_losses.instNCE_loss = torch.tensor(0.0).to(inputs.img_src.device)
         else:
             criterions.InstNCE.batch_size = valid_box[valid_box == True].shape[0]
-            G_losses.instNCE_loss = cfg.TRAIN.w_Instance_NCE * compute_NCE_loss(
+            G_losses.instNCE_loss = cfg.TRAIN.w_Instance_NCE * compute_InstNCE_loss(
                 [fake_box_feature[valid_box, :, :, :]],
                 [box_feature[valid_box, :, :, :]],
                 model.MLPHeadInst,
@@ -335,13 +347,13 @@ def compute_style_ref_loss(src, tgt, criterion):
     return criterion(src, tgt)
 
 
-def compute_NCE_loss(feat_q, feat_k, model, criterionNCE, num_patches):
+def compute_SemNCE_loss(feat_q, feat_k, model, criterionNCE, num_patches, seg=None):
     """
     Calculate the NCE (Normalized Cross Entropy) loss.
 
     Args:
-        feat_q (List[torch.Tensor]): Query features.
-        feat_k (List[torch.Tensor]): Key features.
+        feat_q (List[torch.Tensor]): Query features from input image.
+        feat_k (List[torch.Tensor]): Key features from fake image.
         model (torch.nn.Module): MLP model.
         criterionNCE (torch.nn.Module): Criterion for calculating the loss.
         num_patches (int): Number of patches.
@@ -349,9 +361,68 @@ def compute_NCE_loss(feat_q, feat_k, model, criterionNCE, num_patches):
     Returns:
         torch.Tensor: NCE loss.
     """
+    
+
+    # sample from fake image
+    feat_q_pool, sample_ids, _, _ = model(
+        feats=feat_q, num_patches=num_patches, patch_ids=None
+    )
+    # sample from real image
+    feat_k_pool, _, feat_k_pos, feat_k_neg = model(feats=feat_k, num_patches=num_patches, patch_ids=sample_ids, seg=seg)
+
+    total_nce_loss = 0.0
+    for f_q, f_k, f_k_p, f_k_n in zip(feat_q_pool, feat_k_pool, feat_k_pos, feat_k_neg):
+        total_nce_loss += criterionNCE(f_q, f_k, f_k_p, f_k_n)
+
+    return total_nce_loss
+
+def compute_NCE_loss(feat_q, feat_k, model, criterionNCE, num_patches, seg=None):
+    """
+    Calculate the NCE (Normalized Cross Entropy) loss.
+
+    Args:
+        feat_q (List[torch.Tensor]): Query features from input image.
+        feat_k (List[torch.Tensor]): Key features from fake image.
+        model (torch.nn.Module): MLP model.
+        criterionNCE (torch.nn.Module): Criterion for calculating the loss.
+        num_patches (int): Number of patches.
+
+    Returns:
+        torch.Tensor: NCE loss.
+    """
+    
+
     feat_k_pool, sample_ids = model(
         feats=feat_k, num_patches=num_patches, patch_ids=None
     )
+    feat_q_pool, _ = model(feats=feat_q, num_patches=num_patches, patch_ids=sample_ids)
+
+    total_nce_loss = 0.0
+    for f_q, f_k in zip(feat_q_pool, feat_k_pool):
+        total_nce_loss += criterionNCE(f_q, f_k).mean()
+
+    return total_nce_loss / len(feat_q)
+
+def compute_InstNCE_loss(feat_q, feat_k, model, criterionNCE, num_patches):
+    """
+    Calculate the NCE (Normalized Cross Entropy) loss.
+
+    Args:
+        feat_q (List[torch.Tensor]): Query features from input image.
+        feat_k (List[torch.Tensor]): Key features from fake image.
+        model (torch.nn.Module): MLP model.
+        criterionNCE (torch.nn.Module): Criterion for calculating the loss.
+        num_patches (int): Number of patches.
+
+    Returns:
+        torch.Tensor: NCE loss.
+    """
+    
+
+    feat_k_pool, sample_ids = model(
+        feats=feat_k, num_patches=num_patches, patch_ids=None
+    )
+
     feat_q_pool, _ = model(feats=feat_q, num_patches=num_patches, patch_ids=sample_ids)
 
     total_nce_loss = 0.0

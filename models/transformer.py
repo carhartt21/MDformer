@@ -27,7 +27,7 @@ class PreInstanceNorm(nn.Module):
         return self.fn(self.norm(x), **kwargs)
 
 
-class Swin_Transformer(nn.Module):
+class AdaIN_Swin_Transformer(nn.Module):
     def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout=0.0, vis=False):
         super().__init__()
         self.layers = nn.ModuleList([])
@@ -123,6 +123,7 @@ class AdaIn_Transformer(nn.Module):
 
         self.features = tuple(ll)
         return x, w
+        
 
 
 class Transformer(nn.Module):
@@ -172,7 +173,7 @@ class Transformer(nn.Module):
                 vis=self.vis,
             )
         elif self.transformer_type == "swin":
-            self.transformer = Swin_Transformer(
+            self.transformer = AdaIN_Swin_Transformer(
                 dim=self.total_embed_C,
                 depth=depth,
                 heads=heads,

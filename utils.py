@@ -765,16 +765,13 @@ class SemNCELoss(nn.Module):
         Returns:
             torch.Tensor: The computed loss.
         """
-        logging.info(f'>>>>SemNCE forward pass, batch_size: {feat_q.shape[0] }')
         batchSize = feat_q.shape[0] 
-        loss = []
+        loss = 0.0
         for mini_batch in range(batchSize):
             b_feat_q = feat_q[mini_batch].detach()
             b_feat_k = feat_k[mini_batch].detach()            
             dim = b_feat_q.shape[1] 
-            num_patch = b_feat_q.shape[0]
-            # feat_q = feat_q.view(-1, dim)
-            # feat_k = feat_k.view(-1, dim)            
+            num_patch = b_feat_q.shape[0]    
             b_feat_k_pos = feat_k_pos[mini_batch].detach().view(num_patch, -1, dim)
             b_feat_k_neg = feat_k_neg[mini_batch].detach().view(num_patch, -1, dim)
             l_same = torch.matmul(b_feat_q.view(-1, 1, dim), b_feat_k.view(-1, dim, 1))
@@ -785,11 +782,9 @@ class SemNCELoss(nn.Module):
 
             l_neg = torch.bmm(b_feat_q, b_feat_k_neg.transpose(1, 2))
             l_neg = l_neg.squeeze(1)
-
             out = torch.cat((l_same, l_pos, l_neg), dim=1) / self.nce_T
 
             loss += self.cross_entropy_loss(out, torch.zeros(out.size(0), dtype=torch.long,
-                                                            device=feat_q.device))
-
-        return (sum(loss)/batchSize)
+                                                            device=feat_q.device)).mean()
+        return loss/batchSize
     

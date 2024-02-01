@@ -173,11 +173,7 @@ class MLPHead(nn.Module):
         # batch_size = feats[0].shape[0]
         if self.use_mlp and not self.mlp_init:
             self.create_mlp(feats, feats[0].device)
-        logging.info(f"feats : {len(feats)}")
         for feat_id, feat in enumerate(feats):
-            logging.info(f"feat{feat_id}.shape : {feat.shape}")
-            
-            # if not self.if_inst_feat:
             if len(feat.shape) == 4:  # Conv
                 B, H, W = (
                     feat.shape[0],
@@ -189,7 +185,6 @@ class MLPHead(nn.Module):
                 )  # torch.Size([2, 65536, 128]) ##inst [2, 64, 256]
             else:  # Attention
                 feat_reshape = feat
-            logging.info(f"feat{feat_id}_reshape.shape : {feat_reshape.shape}")
             if num_patches > 0:
                 if patch_ids is not None:
                     patch_id = patch_ids[feat_id]
@@ -203,7 +198,6 @@ class MLPHead(nn.Module):
                 x_sample = feat_reshape[:, patch_id, :].flatten(
                     0, 1
                 )
-                logging.info(f'x_sample: {x_sample.shape}')# reshape(-1, x.shape[1])
             else:
                 x_sample = feat_reshape  # inst 128,256
                 patch_id = []
@@ -216,16 +210,12 @@ class MLPHead(nn.Module):
 
             return_ids.append(patch_id)
             x_sample = self.l2norm(x_sample)
-            logging.info(f"x_sample.shape : {x_sample.shape}")
-            logging.info(f"patch_id.shape : {patch_id.shape}")
 
             if num_patches == 0:
                 x_sample = x_sample.permute(0, 2, 1).reshape(
                     [B, x_sample.shape[-1], H, W]
                 )
             return_feats.append(x_sample)
-        logging.info(f"return_ids : {len(return_ids)}")
-        logging.info(f"return_feats : {len(return_feats)}")
         return return_feats, return_ids
 
 
@@ -306,7 +296,7 @@ class NPMLPHead(nn.Module):
                         patch_id = patch_ids[feat_id]
                         for p_id in patch_id:
                             cls = seg_reshape[b, p_id]
-                            mask = seg_reshape[b] == cls
+                            mask = (seg_reshape[b] == cls) | (seg_reshape[b] == 0)
                             pos_features = feat_reshape[b, mask]
                             neg_features = feat_reshape[b, ~mask]
                             pos_id = torch.randperm(
