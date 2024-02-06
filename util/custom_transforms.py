@@ -186,7 +186,7 @@ class ToTensor:
 
 
 class SegMaskToPatches:
-    def __init__(self, patch_size: int = 16, min_coverage: float = 0.9):
+    def __init__(self, patch_size: int = 16, min_coverage: float = 0.9, input_dim=256):
         """
         Initialize SegMaskToPatches transform.
 
@@ -200,6 +200,7 @@ class SegMaskToPatches:
 
         self.patch_size = patch_size
         self.min_coverage = min_coverage
+        self.input_dim = input_dim
 
     def __call__(self, seg_masks):
         """
@@ -211,16 +212,19 @@ class SegMaskToPatches:
         Returns:
             The transformed sample.
         """
-        height, width = seg_masks.shape[-2] // 4, seg_masks.shape[-1] // 4
+        height, width = seg_masks.shape[-2], seg_masks.shape[-1]
         assert (
             height == width
         ), "Segmentation map height {} and width {} are not equal".format(height, width)
         assert (
             height % self.patch_size == 0
-        ), "Segmenation map {}x{} is not divisible by patch size {}".format(
+        ), "Segmentation map {}x{} is not divisible by patch size {}".format(
             height, width, self.patch_size
         )
-        n_patches = height // self.patch_size
+        if height != self.input_dim:
+            seg_masks = transforms.functional.resize(
+                seg_masks, self.input_dim, interpolation=InterpolationMode.NEAREST)
+        n_patches = self.input_dim // self.patch_size
         # Get list of unique classes in the segmentation map excluding 0
         _classes = torch.unique(seg_masks[seg_masks != 0], sorted=True)
         # Calculate the minimum number of pixels that should be covered by the segmentation map in each patch
