@@ -1,4 +1,4 @@
-from .content_encoder import ContentEncoder
+from .content_encoder import ContentEncoder, ContentEncoder2
 from .style_encoder import StyleEncoder, MLP, MappingNetwork
 from .transformer import Transformer
 from .generator import Generator
