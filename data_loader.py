@@ -572,7 +572,6 @@ class RefProvider:
 
     def __next__(self, d_src=None):
         ref = self._fetch_refs()
-        logging.info(">> RefProvider: {}".format(ref.domain.shape))
         if d_src is not None:
             logging.info(
                 "d_src:{} ref_domains:{}".format(
@@ -612,7 +611,6 @@ class TestProvider:
             inputs = Munch(img=sample.img, seg=sample.seg_masks)
         else:
             raise NotImplementedError
-        logging.info(">> TestProvider: {}".format(inputs))
         return Munch(
             {
                 k: v.to(self.device) if k is not "fname" else [v]
