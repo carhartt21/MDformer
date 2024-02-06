@@ -16,16 +16,18 @@ class Generator(nn.Module):
         n_generator_filters=64,
         n_downsampling=2,
         use_bias=True,
+        swin = True,
     ):
-        super(Generator, self).__init__()
 
+        super(Generator, self).__init__()
+        grid_size = input_size // (patch_size * 2**3) #  num swin stages-1
         self.inv_embed = nn.Sequential(
             blocks.Transpose(1, 2),
             nn.Unflatten(
-                2, torch.Size([input_size // patch_size, input_size // patch_size])
+                2, torch.Size([grid_size, grid_size])
             ),
             nn.ConvTranspose2d(
-                in_channels=embed_C,
+                in_channels=embed_C * 8, # TODO currently hardcoded for last swin layer
                 out_channels=feat_C,
                 kernel_size=patch_size,
                 stride=patch_size,
@@ -52,13 +54,13 @@ class Generator(nn.Module):
         for i in range(n_downsampling):  # add upsampling layers
             mult = 2 ** (n_downsampling - i)
             model += [
-                blocks.Upsample(n_generator_filters * mult),
+                blocks.Upsample(channels=feat_C),
                 nn.Conv2d(
-                    n_generator_filters * mult,
+                    feat_C,
                     int(n_generator_filters * mult / 2),
                     kernel_size=3,
                     stride=1,
-                    padding=1,  # output_padding=1,
+                    padding=1,
                     bias=use_bias,
                 ),
                 nn.InstanceNorm2d(int(n_generator_filters * mult / 2)),
@@ -74,8 +76,12 @@ class Generator(nn.Module):
     def forward(self, x, box_info=None):
         # remove the first token [<cls>]
         # x = x[:, 1:, :]
+        logging.info(f"Generator input shape: {x.shape} self.inv_embed: {self.inv_embed}")
         if box_info == None:
-            out = self.model(self.inv_embed(x))
+            out = self.inv_embed(x)
+            logging.info(f"Generator inv_embed output shape: {out.shape}")
+            logging.info(f"Generator model: {self.model}")
+            out = self.model(out)
         else:
             B_i, N_i, C_i = x.shape
 
