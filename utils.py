@@ -417,7 +417,7 @@ def user_scattered_collate(batch):
 
 def assign_adain_params(adain_params, model):
     # assign the adain_params to the AdaIN layers in model
-    for layer_id, layer in enumerate(model):
+    for _, layer in enumerate(model):
         m = layer[0].norm
 
         mean = adain_params[:, :m.num_features]
@@ -439,9 +439,13 @@ def assign_adain_params(adain_params, model):
 def get_num_adain_params(model):
     # return the number of AdaIN parameters needed by the model
     num_adain_params = 0
-    for m in model.modules():
-        if m.__class__.__name__ == "AdaptiveInstanceNorm2d":
-            num_adain_params += 2*m.num_features
+    for m in model.layers:
+        if m.__class__.__name__ == "BasicLayer":
+            for swin_block in m.blocks:
+                for layer in swin_block.children():
+                    if layer.__class__.__name__ == "AdaptiveInstanceNorm2d":
+                        num_adain_params = 2*layer.num_features
+    logging.info(f'>>>>Number of AdaIN parameters: {num_adain_params}')                        
     return num_adain_params            
 
 def set_requires_grad(nets, requires_grad=False):
