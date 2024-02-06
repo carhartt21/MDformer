@@ -170,32 +170,29 @@ class AdaptiveInstanceNorm2d(nn.Module):
         self.num_features = num_features
         self.eps = eps
         self.momentum = momentum
-        # weight and bias are dynamically assigned
+        # weight and bias are dynamically assigned at runtime
         self.weight = None
         self.bias = None
         num_features = num_features
-        # just dummy buffers, not used
+        # dummy buffers, not actually used at runtime
         self.register_buffer("running_mean", torch.zeros(num_features))
         self.register_buffer("running_var", torch.ones(num_features))
 
-    def forward(self, x):  # x: 4,79,1024
+    def forward(self, x):
         assert (
             self.weight is not None and self.bias is not None
-        ), "Please assign weight and bias before calling AdaIN!"
-
+        ), "Assign weight and bias before calling AdaIN!"
         x = x.transpose(1, 2)
         b, c = x.size(0), x.size(1)
         running_mean = self.running_mean.repeat(
             b
-        )  # 4096 #tensor([0., 0., 0.,  ..., 0., 0., 0.], device='cuda:0')
+        )
         running_var = self.running_var.repeat(
             b
-        )  # 4096 #tensor([1., 1., 1.,  ..., 1., 1., 1.], device='cuda:0')
-
-        # Apply instance norm
+        )
         x_reshaped = x.contiguous().view(
             1, b * c, *x.size()[2:]
-        )  # ->(1, 316, 1024)->(1,2048,84)
+        )
         out = F.batch_norm(
             x_reshaped,
             running_mean,
@@ -206,7 +203,6 @@ class AdaptiveInstanceNorm2d(nn.Module):
             self.momentum,
             self.eps,
         )
-        # out: 1,4096,79
 
         return out.view(b, c, *x.size()[2:]).transpose(1, 2)
 
@@ -501,31 +497,6 @@ class Upsample(nn.Module):
         self.filt_size = filt_size
         self.filt_odd = np.mod(filt_size, 2) == 1
         self.pad_size = int((filt_size - 1) / 2)
-
-
-
-####################################    Generator   ####################################
-
-
-class Transpose(nn.Module):
-    # Transpose layer; dim0 and dim1 are the dimension to be swapped
-    def __init__(self, dim0, dim1):
-        super(Transpose, self).__init__()
-        self.dim0 = dim0
-        self.dim1 = dim1
-
-    def forward(self, x):
-        x = x.transpose(self.dim0, self.dim1)
-        return x
-
-
-class Upsample(nn.Module):
-    # Upsample the image by a factor of stride, channels is the number of channels in the input image
-    def __init__(self, channels, pad_type="repl", filt_size=4, stride=2):
-        super(Upsample, self).__init__()
-        self.filt_size = filt_size
-        self.filt_odd = np.mod(filt_size, 2) == 1
-        self.pad_size = int((filt_size - 1) / 2)
         self.stride = stride
         self.off = int((self.stride - 1) / 2.0)
         self.channels = channels
@@ -536,7 +507,7 @@ class Upsample(nn.Module):
         )
 
         self.pad = get_pad_layer(pad_type)([1, 1, 1, 1])
-
+        logging.info(f'Upsample: pad: {self.pad} filt: {self.filt.shape} stride: {self.stride} pad_size: {self.pad_size} filt_odd: {self.filt_odd}')
     def forward(self, inp):
         ret_val = F.conv_transpose2d(
             self.pad(inp),
