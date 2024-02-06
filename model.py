@@ -39,6 +39,12 @@ class StarFormer(nn.Module):
         if mode == "train":
             self.optimizer = Munch()
             for net in self.model.keys():
+                skip = {}
+                skip_keywords = {}
+                if hasattr(net, 'no_weight_decay'):
+                    skip = net.no_weight_decay()
+                if hasattr(net, 'no_weight_decay_keywords'):
+                    skip_keywords = net.no_weight_decay_keywords()
                 if "MLPHead" in net:
                     continue
                 if net == "MappingNetwork" and cfg.TRAIN.lr_MN > 0.0:
@@ -51,8 +57,9 @@ class StarFormer(nn.Module):
                     lr = cfg.TRAIN.lr_CE
                 else:
                     lr = cfg.TRAIN.lr
+                parameters = self._set_weight_decay(self.model[net], skip, skip_keywords)                    
                 self.optimizer[net] = torch.optim.Adam(
-                    params=self.model[net].parameters(),
+                    params=parameters,
                     lr=lr,
                     betas=cfg.TRAIN.optim_beta,
                     weight_decay=cfg.TRAIN.weight_decay,
@@ -102,6 +109,22 @@ class StarFormer(nn.Module):
     def _reset_grad(self):
         for optim in self.optimizer.values():
             optim.zero_grad()
+            
+    def _set_weight_decay(self, model, skip_list=(), skip_keywords=()):
+        has_decay = []
+        no_decay = []
+        for name, param in model.module.named_parameters():
+            if not param.requires_grad:
+                continue  # frozen weights
+            if len(param.shape) == 1 or name.endswith(".bias") or (name in skip_list) or _check_keywords(name, skip_keywords):
+                no_decay.append(param)
+                # print(f"{name} has no weight decay")
+            else:
+                has_decay.append(param)
+        return [{'params': has_decay},
+                {'params': no_decay, 'weight_decay': 0.}]        
+
+          
 
     def train(self, loader, visualizer):
         cfg = self.cfg
@@ -412,3 +435,10 @@ class StarFormer(nn.Module):
 def moving_average(model, model_test, beta=0.999):
     for param, param_test in zip(model.parameters(), model_test.parameters()):
         param_test.data = torch.lerp(param.data, param_test.data, beta)
+
+def _check_keywords(name, keywords=()):
+    isin = False
+    for keyword in keywords:
+        if keyword in name:
+            isin = True
+    return isin  
