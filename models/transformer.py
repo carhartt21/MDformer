@@ -6,6 +6,7 @@ import torchvision.ops.roi_align as roi_align  # Instance Aware
 from einops import repeat, rearrange
 from torchvision import transforms
 
+from . import swin
 from . import vit
 from . import blocks
 from utils import _ntuple
@@ -28,59 +29,96 @@ class PreInstanceNorm(nn.Module):
 
 
 class AdaIN_Swin_Transformer(nn.Module):
-    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout=0.0, vis=False):
+    def __init__(
+        self,
+        swin_cfg, # swin config
+        input_size=(128, 128),
+        patch_size=(4, 4),
+        in_chans=3,
+        num_classes=1000,
+        dim=96,
+        # depths=[2, 2, 6, 2],
+        # num_heads=[3, 6, 12, 24],
+        # window_size=7,
+        # mlp_ratio=4.0,
+        # qkv_bias=True,
+        # drop_rate=0.0,
+        # attn_drop_rate=0.0,
+        drop_path_rate=0.1,
+        ape=False,
+        patch_norm=True,
+        use_checkpoint=False,
+        pretrained_window_sizes=[0, 0, 0, 0],
+        vis=False,
+        **kwargs
+    ):
         super().__init__()
+        # self.num_classes = num_classes
+        self.depths = swin_cfg.depths
+        self.num_layers = len(self.depths)
+        self.embed_dim = dim
+        self.ape = ape
+        self.patch_norm = patch_norm
+        self.num_features = int(dim * 2 ** (self.num_layers - 1))
         self.layers = nn.ModuleList([])
         self.vis = vis
-        for _ in range(depth):
-            self.layers.append(
-                nn.ModuleList(
-                    [
-                        PreInstanceNorm(
-                            dim,
-                            vit.Attention(
-                                dim,
-                                heads=heads,
-                                dim_head=dim_head,
-                                dropout=dropout,
-                                vis=vis,
-                            ),
-                        ),
-                        PreInstanceNorm(
-                            dim, vit.FeedForward(dim, mlp_dim, dropout=dropout)
-                        ),
-                    ]
-                )
-            )
-        self.hooks = []
-        self.features = None
+        # self.pos_drop = nn.Dropout(p=swin_cfg.drop_rate)
 
-    def set_hooks(self, hooks):
-        self.hooks = hooks
+        # stochastic depth
+        dpr = [
+            x.item() for x in torch.linspace(0, drop_path_rate, sum(self.depths))
+        ]  # stochastic depth decay rule
+
+        patches_resolution = [
+            input_size[0] // patch_size[0],
+            input_size[1] // patch_size[1],
+        ]
+
+        # build layers
+        for i_layer in range(self.num_layers):
+            layer = swin.BasicLayer(
+                dim=int(dim * 2**i_layer),
+                input_resolution=(
+                    patches_resolution[0] // (2**i_layer),
+                    patches_resolution[1] // (2**i_layer),
+                ),
+                depth=self.depths[i_layer],
+                num_heads=swin_cfg.num_heads[i_layer],
+                window_size=swin_cfg.window_size,
+                mlp_ratio=swin_cfg.mlp_ratio,
+                qkv_bias=swin_cfg.qkv_bias,
+                drop=swin_cfg.drop_path_rate,
+                attn_drop=swin_cfg.attn_drop_rate,
+                drop_path=dpr[sum(swin_cfg.depths[:i_layer]) : sum(self.depths[: i_layer + 1])],
+                norm_layer=blocks.AdaptiveInstanceNorm2d,
+                downsample=swin.PatchMerging
+                if (i_layer < self.num_layers - 1)
+                else None,
+                pretrained_window_size=pretrained_window_sizes[i_layer],
+            )
+            self.layers.append(layer)
 
     def forward(self, x):
-        i = 0
-        w = []
-        ll = []
-        for attn, ff in self.layers:
-            _x, _w = attn(x)
-            x += _x
-            if self.vis:
-                w.append(_w)
-            x = ff(x) + x
-            if i in self.hooks:
-                ll.append(x)
-            i += 1
+        # x = self.pos_drop(x)
 
-        self.features = tuple(ll)
-        return x, w
+        for layer in self.layers:
+            x = layer(x)
+
+        # x = self.norm(x)  # B L C
+        # x = self.avgpool(x.transpose(1, 2))  # B C 1
+        # x = torch.flatten(x, 1)
+        # B x patch_size*patch_size x dim
+        # 8 x 16 x 8448
+        return x, []
 
 
 class AdaIn_Transformer(nn.Module):
-    def __init__(self, dim, depth, heads, dim_head, mlp_dim, dropout=0.0, vis=False):
+    def __init__(self, vit_cfg, dim, depth, vis=False):
         super().__init__()
         self.layers = nn.ModuleList([])
         self.vis = vis
+        depth = vit_cfg.depth
+        
         for _ in range(depth):
             self.layers.append(
                 nn.ModuleList(
@@ -89,14 +127,14 @@ class AdaIn_Transformer(nn.Module):
                             dim,
                             vit.Attention(
                                 dim,
-                                heads=heads,
-                                dim_head=dim_head,
-                                dropout=dropout,
+                                heads=vit_cfg.heads,
+                                dim_head=depth,
+                                dropout=vit_cfg.dropout,
                                 vis=vis,
                             ),
                         ),
                         PreInstanceNorm(
-                            dim, vit.FeedForward(dim, mlp_dim, dropout=dropout)
+                            dim, vit.FeedForward(dim=dim, hidden_dim=vit_cfg.mlp_dim, dropout=vit_cfg.dropout)
                         ),
                     ]
                 )
@@ -109,77 +147,68 @@ class AdaIn_Transformer(nn.Module):
 
     def forward(self, x):
         i = 0
-        w = []
+        weights = []
         ll = []
-        for attn, ff in self.layers:
-            _x, _w = attn(x)
+        for attention, feed_forward in self.layers:
+            _x, _w = attention(x)
             x += _x
             if self.vis:
-                w.append(_w)
-            x = ff(x) + x
+                weights.append(_w)
+            x = feed_forward(x) + x
             if i in self.hooks:
                 ll.append(x)
             i += 1
 
         self.features = tuple(ll)
-        return x, w
-        
+        return x, weights
 
 
 class Transformer(nn.Module):
     def __init__(
         self,
-        input_size: int = 88,
-        patch_size: int = 8,
-        patch_embed_C: int = 1024,
-        sem_embed_C: int = 64,
-        feat_C: int = 256,
-        depth: int = 6,
-        heads: int = 4,
-        mlp_dim: int = 4096,
+        model_cfg,
         num_sem_classes: int = 16,
-        num_classes: int = 16,
-        transformer_type: str = "vit",
         vis: bool = False,
     ):
         super(Transformer, self).__init__()
-        self.transformer_type = transformer_type
+        self.transformer_type = model_cfg.transformer_type
         self.vis = vis
-        self.total_embed_C = patch_embed_C + sem_embed_C
-                
-        self.embedding = Embedding(
-            input_size=input_size,
-            patch_size=patch_size,
-            patch_embed_C=patch_embed_C,
-            sem_embed_C=sem_embed_C,
-            feat_C=feat_C,
-            depth=depth,
-            heads=heads,
-            mlp_dim=mlp_dim,
-            num_sem_classes=num_sem_classes,
-            num_classes=num_classes,
-            vis=vis,
-        )
+        self.total_embed_C = model_cfg.patch_embed_dim + model_cfg.sem_embed_dim
 
         # Transformer
         if self.transformer_type == "vit":
+            self.embedding = Embedding(
+                input_size=model_cfg.img_size[0]//2**model_cfg.n_downsampling,
+                in_chans=model_cfg.n_generator_filters * 2**model_cfg.n_downsampling,
+                patch_size=model_cfg.patch_size,
+                patch_embed_C=model_cfg.patch_embed_dim,
+                sem_embed_C=model_cfg.sem_embed_dim,
+                num_sem_classes=num_sem_classes,
+                vis=self.vis,
+            )
             self.transformer = AdaIn_Transformer(
-                dim=self.total_embed_C,
-                depth=depth,
-                heads=heads,
-                dim_head=feat_C,
-                mlp_dim=mlp_dim,
+                vit_cfg = model_cfg.VIT,
                 dropout=0.0,
                 vis=self.vis,
             )
         elif self.transformer_type == "swin":
+            self.embedding = Embedding(
+                input_size=model_cfg.img_size[0]//2**model_cfg.n_downsampling,
+                in_chans=model_cfg.n_generator_filters * 2**model_cfg.n_downsampling,
+                patch_size=model_cfg.SWIN.patch_size,
+                patch_embed_C=model_cfg.patch_embed_dim,
+                sem_embed_C=model_cfg.sem_embed_dim,
+                num_sem_classes=num_sem_classes,
+                vis=self.vis,
+            )            
             self.transformer = AdaIN_Swin_Transformer(
                 dim=self.total_embed_C,
-                depth=depth,
-                heads=heads,
-                dim_head=feat_C,
-                mlp_dim=mlp_dim,
-                dropout=0.0,
+                input_size=[s//2**model_cfg.n_downsampling for s in model_cfg.img_size],
+                patch_size=[model_cfg.SWIN.patch_size, model_cfg.SWIN.patch_size],
+                swin_cfg=model_cfg.SWIN,
+                depths=model_cfg.SWIN.depths,
+                heads=model_cfg.SWIN.num_heads,
+                drop_path_rate=model_cfg.SWIN.drop_path_rate,
                 vis=self.vis,
             )
         else:
@@ -199,6 +228,35 @@ class Transformer(nn.Module):
 
         return aggregated_feat, aggregated_box, weights
 
+    def apply_adain_params(self, adain_params):
+        # assign the adain_params to the AdaIN layers in model
+        for layer in self.transformer.layers:
+            if self.transformer_type == "vit":
+                for _layer in layer:
+                    if isinstance(_layer, blocks.AdaptiveInstanceNorm2):
+                        mean = adain_params[:, :_layer.num_features]
+                        std = adain_params[:, _layer.num_features:2*_layer.num_features]
+                        _layer.bias = mean.contiguous().view(-1)
+                        _layer.weight = std.contiguous().view(-1)
+                        # if adain_params.size(1) > 2*_layer.num_features:
+                        #     adain_params = adain_params[:, 2*_layer.num_features:]
+            elif self.transformer_type == "swin":
+                for swin_block in layer.blocks:
+                    m = swin_block.norm1
+                    mean = adain_params[:, :m.num_features]
+                    std = adain_params[:, m.num_features:2*m.num_features]
+                    m.bias = mean.contiguous().view(-1)
+                    m.weight = std.contiguous().view(-1)
+                    # if adain_params.size(1) > 2*m.num_features:
+                    #     adain_params = adain_params[:, 2*m.num_features:]
+                    n = swin_block.norm2
+                    mean = adain_params[:, :n.num_features]
+                    std = adain_params[:, n.num_features:2*n.num_features]
+                    n.bias = mean.contiguous().view(-1)
+                    n.weight = std.contiguous().view(-1)
+                    # if adain_params.size(1) > 2*n.num_features:
+                    #     adain_params = adain_params[:, 2*n.num_features:]                    
+
 class Embedding(nn.Module):
     # TODO: Add support for multiple layers
 
@@ -208,12 +266,8 @@ class Embedding(nn.Module):
         patch_size: int = 8,
         patch_embed_C: int = 1024,
         sem_embed_C: int = 64,
-        feat_C: int = 256,
-        depth: int = 6,
-        heads: int = 4,
-        mlp_dim: int = 4096,
+        in_chans: int = 256,
         num_sem_classes: int = 16,
-        num_classes: int = 16,
         vis: bool = False,
     ):
         """
@@ -229,6 +283,7 @@ class Embedding(nn.Module):
             vis: visualize attention maps
         """
         super(Embedding, self).__init__()
+        logging.info(f"Embedding input_size: {input_size}, patch_size: {patch_size}, patch_embed_C: {patch_embed_C}, sem_embed_C: {sem_embed_C}")
         self.input_size = input_size
         self.patch_size = patch_size
         self.patch_embed_C = patch_embed_C
@@ -240,21 +295,21 @@ class Embedding(nn.Module):
         self.patch_embed = PatchEmbedding(
             input_size=input_size,
             patch_size=patch_size,
-            in_chans=feat_C,
+            in_chans=in_chans,
             embed_dim=self.patch_embed_C,
             STEM=stem,
         )
         self.box_embed = PatchEmbedding(
             input_size=patch_size,
             patch_size=patch_size,
-            in_chans=feat_C,
+            in_chans=in_chans,
             embed_dim=self.patch_embed_C,
             STEM=stem,
         )
 
         # Semantic Embedding
         self.sem_embed = SemanticEmbedding(
-            num_sem_classes=num_sem_classes, embed_dim=self.sem_embed_C
+            num_sem_classes=num_sem_classes, embed_dim=self.sem_embed_C, patch_size=patch_size, content_dim=input_size
         )
         # self.cls_token = nn.Parameter(torch.randn(1, 1, self.patch_embed_C+self.sem_embed_C))
 
@@ -314,7 +369,7 @@ class Embedding(nn.Module):
             .transpose(-1, -2)
         )
 
-    def extract_box_feature(self, out, box, n_bbox):
+    def extract_box_feature(self, out, box, n_bbox, patch_size=8):
         """
         Extracts features from bounding boxes using ROI Align.
         Args:
@@ -345,10 +400,10 @@ class Embedding(nn.Module):
             ),
             dim=1,
         ).to(out.device)
-        aligned_out = roi_align(out, roi_info, 8)
+        aligned_out = roi_align(out, roi_info, patch_size)
 
-        aligned_out.view(b, n_bbox, c, 8, 8)[torch.where(box[:, :, 0] == -1)] = 0
-        aligned_out.view(-1, c, 8, 8)
+        aligned_out.view(b, n_bbox, c, patch_size, patch_size)[torch.where(box[:, :, 0] == -1)] = 0
+        aligned_out.view(-1, c, patch_size, patch_size)
 
         return aligned_out
 
@@ -428,7 +483,7 @@ class Embedding(nn.Module):
             sem_embed (bool): Flag indicating whether to apply semantic embeddings. Default is True.
             sem_labels (torch.Tensor): Semantic labels tensor of shape (batch_size, num_classes).
                 Required when sem_embed is True.
-            bbox_info (torch.Tensor): Bounding box information tensor of shape (batch_size, num_boxes, 4).
+            bbox_info (torch.Tensor): Bounding box information tensor of shape (batch_size, num_boxes, 5).
                 Default is None.
             n_bbox (int): Number of bounding boxes. Default is -1.
 
@@ -452,14 +507,12 @@ class Embedding(nn.Module):
 
         # Add box embeddings
         if bbox_info is not None:
-            box_feat = self.extract_box_feature(x, bbox_info, n_bbox)
+            box_feat = self.extract_box_feature(x, bbox_info, n_bbox, self.patch_size)
             patch_embed_x = self.add_box(patch_embed_x, box_feat, bbox_info, n_bbox)
-        
+
         return patch_embed_x
         # Concatenate class tokens and embedded features
         # Add positional embeddings except for the box embeddings
-
-
 
 
 def posemb_sincos_2d(patches, temperature=10000, dtype=torch.float32):
@@ -539,6 +592,7 @@ class PatchEmbedding(nn.Module):
         input_size = to_2tuple(input_size)
         patch_size = to_2tuple(patch_size)
         self.input_size = input_size
+        # logging.info(f"PatchEmbedding input_size: {input_size}, in_chans: {in_chans}, embed_dim: {embed_dim}")
         # self.patch_size = patch_size
         # grid size is the number of patches in the image
         # self.grid_size = (input_size[0] // patch_size[0], input_size[1] // patch_size[1])
@@ -578,13 +632,11 @@ class PatchEmbedding(nn.Module):
             )
         self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
 
-    def forward(self, x):  # x: b*2,256,64,64 / b*2*30,256,8,8
+    def forward(self, x):
         _, _, H, W = x.shape
         assert (
             H == self.input_size[0] and W == self.input_size[1]
-        ), "Input image size ({}*{}) doesn't match model ({}*{})".format(
-            H, W, self.input_size[0], self.input_size[1]
-        )
+        ), f"Input image size ({H}*{W}) doesn't match expected model input ({self.input_size[0]}*{self.input_size[1]})"
         x = self.proj(x).flatten(2).transpose(1, 2)
         # proj:4,1024,8,8 #fl:4,1024,64
         # proj:120,1024,1,1  fl:120,1024,1 tr:120,1,1024
@@ -593,14 +645,19 @@ class PatchEmbedding(nn.Module):
 
 
 class SemanticEmbedding(nn.Module):
-    def __init__(self, num_sem_classes, embed_dim, patch_size=8, min_coverage=0.6):
+    def __init__(self, num_sem_classes, embed_dim, patch_size=8, min_coverage=0.6, content_dim = 256):
         super().__init__()
         self.embedding = nn.Embedding(num_sem_classes, embed_dim)
-        self.to_patches = transforms.Compose([SegMaskToPatches(patch_size=patch_size, min_coverage=min_coverage)])
+        self.to_patches = transforms.Compose(
+            [SegMaskToPatches(patch_size=patch_size, min_coverage=min_coverage, input_dim=content_dim)]
+        )
 
     def forward(self, x, sem_labels, bbox=False):
         if not bbox:
             sem_labels = self.to_patches(sem_labels).to((x.device))
         semantic_emb = self.embedding(sem_labels.to(torch.long))
-        x = torch.cat([x, semantic_emb], dim=-1)
+        assert (
+            x.shape[1] == semantic_emb.shape[1]
+        ), f"Channel dim of input {x.shape[1]} and semantic embeddings {semantic_emb.shape[1]} must match."
+        x = torch.cat([x, semantic_emb], dim=2)
         return x

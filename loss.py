@@ -41,9 +41,7 @@ def model_generation(
         style_code = model.MappingNetwork(lat_trg, refs.d_trg)
     else:
         style_code = model.StyleEncoder(refs.img_ref, refs.d_trg)
-    utils.assign_adain_params(
-        model.MLPAdain(style_code), model.Transformer.module.transformer.layers
-    )
+    model.Transformer.module.apply_adain_params(model.MLPAdain(style_code))
     if "bbox" in inputs and n_bbox != -1:
         features += [
             model.Transformer.module.embedding.extract_box_feature(
