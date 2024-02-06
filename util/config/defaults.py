@@ -35,6 +35,8 @@ _C.DATASET.max_dataset_size = 200000
 _C.MODEL = CN()
 # name of the model
 _C.MODEL.name = "MDformer"
+# transformer type ('vit'| 'swin')
+_C.MODEL.transformer_type = "swin"
 # load pretrained weights, False if training from scratch
 _C.MODEL.load_weight = False
 # load optimizer, False if training from scratch
@@ -75,42 +77,48 @@ _C.MODEL.n_downsampling = 2
 _C.MODEL.n_generator_filters = 64
 # number of discriminator filters
 _C.MODEL.n_discriminator_filters = 64
+# patch embed dimension
+_C.MODEL.patch_embed_dim = 1024
 # ------------------------------------------------------------------------------
 # Transformer parameters
 # ------------------------------------------------------------------------------
-_C.MODEL.TRANSFORMER = CN()
+_C.MODEL.VIT = CN()
 # number of input channels of the transformer
-_C.MODEL.TRANSFORMER.embed_C = 1088
-# number of feature channels of the transformer
-_C.MODEL.TRANSFORMER.feat_C = 256
+_C.MODEL.VIT.feat_C = 256
 # number of transformer layers
-_C.MODEL.TRANSFORMER.depth = 6
+_C.MODEL.VIT.depth = 6
 # number of heads in each transformer layer
-_C.MODEL.TRANSFORMER.heads = 4
+_C.MODEL.VIT.heads = 4
 # dimension of each head
-_C.MODEL.TRANSFORMER.mlp_dim = 4096
+_C.MODEL.VIT.mlp_dim = 4096
+# dropout rate
+_C.MODEL.VIT.dropout = 0.1
 # ------------------------------------------------------------------------------
 # SWIN Transformer parameters
 # ------------------------------------------------------------------------------
 _C.MODEL.SWIN = CN()
 # patch size
-_C.MODEL.SWIN.PATCH_SIZE = 4
+_C.MODEL.SWIN.patch_size = 4
 # embedding dimension
-_C.MODEL.SWIN.EMBED_DIM = 96
+_C.MODEL.SWIN.embed_C = 128
 # depth
-_C.MODEL.SWIN.DEPTHS = [2, 2, 6, 2]
+_C.MODEL.SWIN.depths = [2, 2, 6, 2]
 # number of heads
-_C.MODEL.SWIN.NUM_HEADS = [3, 6, 12, 24]
+_C.MODEL.SWIN.num_heads = [3, 6, 12, 24]
 # window sizes
-_C.MODEL.SWIN.WINDOW_SIZE = 7
+_C.MODEL.SWIN.window_size = 8
 # mlp ratio
-_C.MODEL.SWIN.MLP_RATIO = 4.0
+_C.MODEL.SWIN.mlp_ratio = 4.0
 # qkv bias
-_C.MODEL.SWIN.QKV_BIAS = True
-# qk scale
-_C.MODEL.SWIN.APE = False
+_C.MODEL.SWIN.qkv_bias = True
+# absolute position embedding
+_C.MODEL.SWIN.ape = False
 # use absolute position embedding in swin transformer
-_C.MODEL.SWIN.PATCH_NORM = True
+_C.MODEL.SWIN.patch_norm = True
+# drop path rate
+_C.MODEL.SWIN.drop_path_rate = 0.1
+# attention dropout rate
+_C.MODEL.SWIN.attn_drop_rate = 0.0
 
 
 # -----------------------------------------------------------------------------
