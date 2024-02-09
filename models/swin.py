@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from . import blocks
 import torch.nn.functional as F
 
 from einops import rearrange, repeat, pack
@@ -56,8 +57,7 @@ class SwinTransformerBlock(nn.Module):
         mlp_hidden_dim = int(dim * mlp_ratio)
 
         self.norm2 = norm_layer(dim, eps=eps)
-        self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
-
+        self.mlp = blocks.MLP(input_dim=dim, output_dim=dim, dim=mlp_hidden_dim, n_blk=2, activ=act_layer)
         if self.shift_size > 0:
             # calculate attention mask for SW-MSA
             H, W = self.input_resolution

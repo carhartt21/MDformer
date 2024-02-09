@@ -77,12 +77,12 @@ class ContentEncoder(nn.Module):
         return out, features
 
 
-class ContentEncoder2(nn.Module):
+class ContentEncoderV2(nn.Module):
     def __init__(
         self,
         input_channels=3,        
         n_downsampling=2,
-        num_res_blocks=3,
+        num_res_blocks=1,
         input_dim=512,
         ngf=128,
         norm="IN",
@@ -90,8 +90,7 @@ class ContentEncoder2(nn.Module):
         pad_type="reflect",
         no_antialias=False,
     ):
-        super(ContentEncoder2, self).__init__()
-        logging.info(f"ContentEncoder2 input_channels: {input_channels}, n_downsampling: {n_downsampling}, num_res_blocks: {num_res_blocks}, input_dim: {input_dim}, ngf: {ngf}, norm: {norm}, activation: {activation}, pad_type: {pad_type}, no_antialias: {no_antialias}")
+        super(ContentEncoderV2, self).__init__()
         model = []
         model = [
             nn.ReflectionPad2d(3),
@@ -150,7 +149,6 @@ class ContentEncoder2(nn.Module):
             if i in layers:
                 features.append(feature)
         out = feature
-        logging.info(f"ContentEncoder2 output shape: {out.shape}")
         return out, features
 
 

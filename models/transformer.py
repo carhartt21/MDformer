@@ -10,7 +10,6 @@ from . import swin
 from . import vit
 from . import blocks
 from utils import _ntuple
-import logging
 import math
 from util.custom_transforms import SegMaskToPatches
 
@@ -34,8 +33,6 @@ class AdaIN_Swin_Transformer(nn.Module):
         swin_cfg, # swin config
         input_size=(128, 128),
         patch_size=(4, 4),
-        in_chans=3,
-        num_classes=1000,
         dim=96,
         # depths=[2, 2, 6, 2],
         # num_heads=[3, 6, 12, 24],
@@ -48,7 +45,6 @@ class AdaIN_Swin_Transformer(nn.Module):
         ape=False,
         patch_norm=True,
         use_checkpoint=False,
-        pretrained_window_sizes=[0, 0, 0, 0],
         vis=False,
         **kwargs
     ):
@@ -69,19 +65,16 @@ class AdaIN_Swin_Transformer(nn.Module):
             x.item() for x in torch.linspace(0, drop_path_rate, sum(self.depths))
         ]  # stochastic depth decay rule
 
-        patches_resolution = [
+        # input resolution for first layer
+        input_resolution=[
             input_size[0] // patch_size[0],
             input_size[1] // patch_size[1],
-        ]
-
-        # build layers
+        ]      
+        # build layers 
         for i_layer in range(self.num_layers):
             layer = swin.BasicLayer(
                 dim=int(dim * 2**i_layer),
-                input_resolution=(
-                    patches_resolution[0] // (2**i_layer),
-                    patches_resolution[1] // (2**i_layer),
-                ),
+                input_resolution=input_resolution,
                 depth=self.depths[i_layer],
                 num_heads=swin_cfg.num_heads[i_layer],
                 window_size=swin_cfg.window_size,
@@ -92,23 +85,21 @@ class AdaIN_Swin_Transformer(nn.Module):
                 drop_path=dpr[sum(swin_cfg.depths[:i_layer]) : sum(self.depths[: i_layer + 1])],
                 norm_layer=blocks.AdaptiveInstanceNorm2d,
                 downsample=swin.PatchMerging
-                if (i_layer < self.num_layers - 1)
+                if (swin_cfg.downsample[i_layer] and i_layer < self.num_layers - 1)
                 else None,
-                pretrained_window_size=pretrained_window_sizes[i_layer],
-            )
+                )
             self.layers.append(layer)
+            if swin_cfg.downsample[i_layer]: # adapt input resolution for next stage
+                input_resolution = (
+                    input_resolution[0] // 2,
+                    input_resolution[1] // 2,
+                )
 
     def forward(self, x):
         # x = self.pos_drop(x)
 
         for layer in self.layers:
             x = layer(x)
-
-        # x = self.norm(x)  # B L C
-        # x = self.avgpool(x.transpose(1, 2))  # B C 1
-        # x = torch.flatten(x, 1)
-        # B x patch_size*patch_size x dim
-        # 8 x 16 x 8448
         return x, []
 
 
@@ -228,35 +219,6 @@ class Transformer(nn.Module):
 
         return aggregated_feat, aggregated_box, weights
 
-    def apply_adain_params(self, adain_params):
-        # assign the adain_params to the AdaIN layers in model
-        for layer in self.transformer.layers:
-            if self.transformer_type == "vit":
-                for _layer in layer:
-                    if isinstance(_layer, blocks.AdaptiveInstanceNorm2):
-                        mean = adain_params[:, :_layer.num_features]
-                        std = adain_params[:, _layer.num_features:2*_layer.num_features]
-                        _layer.bias = mean.contiguous().view(-1)
-                        _layer.weight = std.contiguous().view(-1)
-                        # if adain_params.size(1) > 2*_layer.num_features:
-                        #     adain_params = adain_params[:, 2*_layer.num_features:]
-            elif self.transformer_type == "swin":
-                for swin_block in layer.blocks:
-                    m = swin_block.norm1
-                    mean = adain_params[:, :m.num_features]
-                    std = adain_params[:, m.num_features:2*m.num_features]
-                    m.bias = mean.contiguous().view(-1)
-                    m.weight = std.contiguous().view(-1)
-                    # if adain_params.size(1) > 2*m.num_features:
-                    #     adain_params = adain_params[:, 2*m.num_features:]
-                    n = swin_block.norm2
-                    mean = adain_params[:, :n.num_features]
-                    std = adain_params[:, n.num_features:2*n.num_features]
-                    n.bias = mean.contiguous().view(-1)
-                    n.weight = std.contiguous().view(-1)
-                    # if adain_params.size(1) > 2*n.num_features:
-                    #     adain_params = adain_params[:, 2*n.num_features:]                    
-
 class Embedding(nn.Module):
     # TODO: Add support for multiple layers
 
@@ -283,7 +245,6 @@ class Embedding(nn.Module):
             vis: visualize attention maps
         """
         super(Embedding, self).__init__()
-        logging.info(f"Embedding input_size: {input_size}, patch_size: {patch_size}, patch_embed_C: {patch_embed_C}, sem_embed_C: {sem_embed_C}")
         self.input_size = input_size
         self.patch_size = patch_size
         self.patch_embed_C = patch_embed_C
