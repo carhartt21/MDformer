@@ -9,9 +9,6 @@ from torch import nn
 from op import fused_leaky_relu, upfirdn2d
 
 
-# from models.basic_layers import (EqualLinear, PixelNorm,
-#                                  SinusoidalPositionalEmbedding, Upsample)
-
 
 def make_kernel(k):
     k = torch.tensor(k, dtype=torch.float32)
@@ -267,21 +264,6 @@ class WindowAttention(nn.Module):
         # x = self.proj(x)
         flops += N * self.dim * self.dim
         return flops
-
-
-# class AdaptiveInstanceNorm(nn.Module):
-#     def __init__(self, in_channel, style_dim):
-#         super().__init__()
-#         self.norm = nn.InstanceNorm1d(in_channel)
-#         self.style = EqualLinear(style_dim, in_channel * 2)
-
-#     def forward(self, input, style):
-#         style = self.style(style).unsqueeze(-1)
-#         gamma, beta = style.chunk(2, 1)
-
-#         out = self.norm(input)
-#         out = gamma * out + beta
-#         return out
 
 
 class StyleSwinTransformerBlock(nn.Module):

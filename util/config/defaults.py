@@ -36,7 +36,7 @@ _C.MODEL = CN()
 # name of the model
 _C.MODEL.name = "MDformer"
 # transformer type ('vit'| 'swin')
-_C.model.TransformerEnc_type = "swin"
+_C.MODEL.transformer_type = "swin"
 # load pretrained weights, False if training from scratch
 _C.MODEL.load_weight = False
 # load optimizer, False if training from scratch

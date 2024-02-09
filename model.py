@@ -49,7 +49,7 @@ class StarFormer(nn.Module):
                     continue
                 if net == "MappingNetwork" and cfg.TRAIN.lr_MN > 0.0:
                     lr = cfg.TRAIN.lr_MN
-                elif net == "Generator" and cfg.TRAIN.lr_G > 0.0:
+                elif net == "TransformerGen" and cfg.TRAIN.lr_G > 0.0:
                     lr = cfg.TRAIN.lr_G
                 elif net == "Discriminator" and cfg.TRAIN.lr_D > 0.0:
                     lr = cfg.TRAIN.lr_D
@@ -259,8 +259,8 @@ class StarFormer(nn.Module):
                 G_loss.backward()
 
                 optimizer.ContentEncoder.step()
-                optimizer.Generator.step()
-                optimizer.Transformer.step()
+                optimizer.TransformerGen.step()
+                optimizer.TransformerEnc.step()
                 optimizer.MLPAdain.step()
                 optimizer.MappingNetwork.step()
                 optimizer.StyleEncoder.step()
@@ -280,8 +280,8 @@ class StarFormer(nn.Module):
                 self._reset_grad()
                 G_loss.backward()
                 optimizer.ContentEncoder.step()
-                optimizer.Generator.step()
-                optimizer.Transformer.step()
+                optimizer.TransformerGen.step()
+                optimizer.TransformerEnc.step()
                 optimizer.MLPAdain.step()
                 # According to StarGAN-v2, the MappingNetwork and StyleEncoder are not updated
                 if cfg.TRAIN.w_NCE > 0.0:

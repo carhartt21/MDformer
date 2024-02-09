@@ -6,7 +6,7 @@ TRAIN:
   end_epoch: 100 # number of epochs of training
   #contnue here
   batch_size_per_gpu: 8 # input batch size
-  num_workers: 0 # # threads for loading data
+  num_workers: 16 # # threads for loading data
   lr: 2e-4 # initial global learning rate
   lr_MN: 1e-6 # initial learning rate for the mapping network
   optim_beta: [0.5, 0.999] # momentum terms of adam

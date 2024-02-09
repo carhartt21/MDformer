@@ -86,11 +86,11 @@ def translate_using_latent(model_G, cfg, input, d_trg, psi, filename, latent_dim
     d_trg = rearrange(d_trg, 'b -> 1 b')
     s_trg = model_G.MappingNetwork(z_trg, d_trg)
     s_trg = torch.lerp(s_avg, s_trg, 0.0)
-    assign_adain_params(model_G.MLPAdain(s_trg), model_G.Transformer.transformer.layers)
+    apply_adain_params(model_G.MLPAdain(s_trg), model_G.Transformer.transformer.layers)
     feat_content, features = model_G.ContentEncoder(input.img, feat_layers)    
     aggregated_feat, _, _ = model_G.Transformer(feat_content, sem_embed=True, sem_labels=input.seg, n_bbox=-1)
      
-    x_fake = model_G.Generator(aggregated_feat)    
+    x_fake = model_G.TransformerGen(aggregated_feat)    
     # x_concat += [x_fake]
 
     # x_concat = torch.cat(x_concat, dim=0)
