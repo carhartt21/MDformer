@@ -81,22 +81,6 @@ class StyleEncoder_v2(nn.Module):
         s = out[idx, y]  # (batch, style_dim)
         return s
 
-
-
-class MLP(nn.Module):
-    def __init__(self, input_dim=8, output_dim=2048, dim=256, n_blk=3, norm='none', activ='relu'):
-
-        super(MLP, self).__init__()
-        self.model = []
-        self.model += [blocks.LinearBlock(input_dim, dim, norm=norm, activation=activ)]
-        for i in range(n_blk - 2):
-            self.model += [blocks.LinearBlock(dim, dim, norm=norm, activation=activ)]
-        self.model += [blocks.LinearBlock(dim, output_dim, norm='none', activation='none')] # no output activations
-        self.model = nn.Sequential(*self.model)
-
-    def forward(self, x):
-        test = self.model(x.view(x.size(0), -1))
-        return test
     
 #from StarGAN v2
 class MappingNetwork(nn.Module):
