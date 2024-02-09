@@ -8,6 +8,7 @@ import random
 from munch import Munch
 import numpy as np
 from PIL import Image, UnidentifiedImageError
+from typing import Tuple
 
 import torch
 from torch.utils import data
@@ -293,7 +294,7 @@ def _make_balanced_sampler(labels, target_domain_names=[]):
 
 
 def get_train_loader(
-    img_size: (int, int) = (256, 256),
+    img_size: Tuple(int) = (256, 256),
     batch_size: int = 8,
     prob: float = 0.5,
     num_workers: int = 8,

@@ -11,127 +11,14 @@ from typing import Dict, Tuple, Optional, List, Union
 import torch
 
 
-######################################### Forward #########################################
 
-
-def model_generation(
-    inputs: Union[torch.Tensor, dict],
-    refs,
-    lat_trg,
-    model: dict,
-    from_lat: bool = True,
-    n_bbox: int = -1,
-    feat_layers: List[str] = [],
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Forward pass of the generation model.
-
-    Args:
-        inputs (Union[torch.Tensor, dict]): Input tensor or dictionary containing input tensors.
-        model (dict): Dictionary containing the model components.
-        n_bbox (int, optional): Number of bounding boxes. Defaults to -1.
-        feat_layers (List[str], optional): List of feature layers. Defaults to [].
-
-    Returns:
-        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: Tuple containing the generated fake image, fake box, and features.
-    """
-    # when performing generation, the input is the content image from the data loader
-    feat_content, features = model.ContentEncoder(inputs.img_src, feat_layers)
-    style_code_src = model.StyleEncoder(inputs.img_src, inputs.d_src)
-    if from_lat:
-        style_code_trg = model.MappingNetwork(lat_trg, refs.d_trg)
-    else:
-        style_code_trg = model.StyleEncoder(refs.img_ref, refs.d_trg)
-    utils.apply_adain_params(
-        model=model.TransformerEnc.module.transformer,
-        adain_params=model.MLPAdain(style_code_src),
-    )
-    if "bbox" in inputs and n_bbox != -1:
-        features += [
-            model.TransformerEnc.module.embedding.extract_box_feature(
-                feat_content, inputs.bbox, n_bbox
-            )
-        ]
-
-    if n_bbox == -1:
-        aggregated_feat, _, _ = model.TransformerEnc(
-            feat_content, sem_embed=True, sem_labels=inputs.seg, n_bbox=n_bbox
-        )
-    else:
-        aggregated_feat, aggregated_box, weights = model.TransformerEnc(
-            feat_content, sem_labels=inputs.seg, bbox_info=inputs.bbox, n_bbox=n_bbox
-        )
-    utils.apply_adain_params(
-        model=model.TransformerGen.module, adain_params=model.MLPAdain(style_code_trg)
-    )
-    fake = model.TransformerGen(aggregated_feat)
-    fake_box = (
-        model.TransformerGen(aggregated_box, inputs.bbox)
-        if n_bbox != -1 in inputs
-        else None
-    )
-    # logging.info('model forward generation d_src_pred: {}'.format(d_src_pred))
-    return fake, fake_box, features, style_code_trg
-
-
-def model_reconstruction(
-    inputs: Union[torch.Tensor, dict],
-    fake_img: torch.Tensor,
-    model: dict,
-    d_trg: torch.Tensor,
-    feat_layers: List[str] = [],
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """
-    Forward pass of the model for image reconstruction.
-
-    Args:
-        fake_img (torch.Tensor): The input fake image tensor.
-        model (dict): The model dictionary containing the content encoder, style encoder, MLP Adain, transformer, and generator.
-        d_src_pred (torch.Tensor): The source domain tensor.
-        feat_layers (List[str], optional): List of feature layers. Defaults to [].
-
-    Returns:
-        Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: A tuple containing the reconstructed image tensor, style code tensor, and aggregated feature tensor.
-    """
-    feat_content, _ = model.ContentEncoder(fake_img, feat_layers)
-
-    # replace empty domain with predicted domain
-    style_code_fake = model.StyleEncoder(fake_img, d_trg)
-    style_code_rec = model.StyleEncoder(inputs.img_src, inputs.d_src)
-    # use mapping network to generate a style code for the reconstruction
-    utils.apply_adain_params(
-        model.MLPAdain(style_code_fake),
-        model.TransformerEnc.module.transformer,
-    )
-    # use segmenation map from source also for reconstruction
-    aggregated_feat, _, _ = model.TransformerEnc(
-        feat_content, sem_embed=True, sem_labels=inputs.seg, n_bbox=-1
-    )
-    utils.apply_adain_params(
-        model=model.TransformerGen.module, adain_params=model.MLPAdain(style_code_rec)
-    )
-    # aggregated_feat, _, weights = model.TransformerEnc(feat_content, sem_embed=False, n_bbox=-1)
-    rec_img = model.TransformerGen(aggregated_feat)
-    return rec_img
-
-
-######################################### Total Loss #########################################
+######################################### Discriminator Loss #########################################
 
 
 def compute_D_loss(
-    inputs, refs, model, criterions, cfg, from_lat=True, gan_mode="lsgan"
+    inputs, refs, fake_img, model, criterions, cfg, from_lat=True, gan_mode="lsgan"
 ):
     total_D_loss = 0
-    fake_img, _, _, _ = model_generation(
-        inputs=inputs,
-        refs=refs,
-        lat_trg=inputs.lat_trg,
-        model=model,
-        n_bbox=cfg.TRAIN.n_bbox,
-        feat_layers=cfg.MODEL.feat_layers,
-        from_lat=from_lat,
-    )
-
     D_losses = Munch()
     D_losses.D_fake_loss = compute_Discrim_loss(
         fake_img,
@@ -171,20 +58,22 @@ def compute_D_loss(
 def compute_G_loss(
     inputs: Dict,
     refs: Dict,
+    fake_img: torch.Tensor,
+    s_trg: torch.Tensor,
     model: Dict,
     criterions: Dict,
+    features: List[torch.Tensor],
     cfg: object,
-    from_lat: bool = True,
 ) -> Tuple[float, Dict]:
-    fake_img, box_feature, features, s_trg = model_generation(
-        inputs=inputs,
-        refs=refs,
-        lat_trg=inputs.lat_trg,
-        model=model,
-        n_bbox=cfg.TRAIN.n_bbox,
-        feat_layers=cfg.MODEL.feat_layers,
-        from_lat=from_lat,
-    )
+    # fake_img, box_feature, features, s_trg = model_generation(
+    #     inputs=inputs,
+    #     refs=refs,
+    #     lat_trg=inputs.lat_trg,
+    #     model=model,
+    #     n_bbox=cfg.TRAIN.n_bbox,
+    #     feat_layers=cfg.MODEL.feat_layers,
+    #     from_lat=from_lat,
+    # )
 
     if cfg.TRAIN.n_bbox > 0 and len(features) > len(cfg.MODEL.feat_layers):
         features, box_feature = features[:-1], features[-1]
@@ -253,31 +142,19 @@ def compute_G_loss(
                 64,
             )
 
-    if cfg.TRAIN.w_StyleDiv > 0.0 and from_lat:
-        fake_img_2, _, _, _ = model_generation(
-            inputs=inputs,
-            refs=refs,
-            lat_trg=inputs.lat_trg_2,
-            model=model,
-            n_bbox=cfg.TRAIN.n_bbox,
-            feat_layers=cfg.MODEL.feat_layers,
-        )
-        G_losses.style_div_loss = cfg.TRAIN.w_StyleDiv * compute_diversity_loss(
-            fake_img, fake_img_2, criterions.Style_Div
-        )
+    # if cfg.TRAIN.w_StyleDiv > 0.0 and from_lat:
+    #     fake_img_2, _, _, _ = model_generation(
+    #         inputs=inputs,
+    #         refs=refs,
+    #         lat_trg=inputs.lat_trg_2,
+    #         model=model,
+    #         n_bbox=cfg.TRAIN.n_bbox,
+    #         feat_layers=cfg.MODEL.feat_layers,
+    #     )
+    #     G_losses.style_div_loss = cfg.TRAIN.w_StyleDiv * compute_diversity_loss(
+    #         fake_img, fake_img_2, criterions.Style_Div
+    #     )
 
-    if cfg.TRAIN.w_Cycle > 0.0:
-        recon_img = model_reconstruction(
-            inputs=inputs,
-            fake_img=fake_img,
-            model=model,
-            d_trg=refs.d_trg,
-        )
-        G_losses.cycle_loss = cfg.TRAIN.w_Cycle * compute_cycle_loss(
-            inputs.img_src, recon_img, criterions.Cycle
-        )
-    else:
-        recon_img = torch.zeros_like(fake_img)
 
     # if cfg.TRAIN.w_DClass > 0.0:
     #     if d_src_pred is not None and torch.max(inputs.d_src) > 0.0:
@@ -291,7 +168,7 @@ def compute_G_loss(
         else:
             total_G_loss += loss
 
-    return total_G_loss, G_losses, fake_img, recon_img
+    return total_G_loss, G_losses
 
 
 ######################################### Each Loss #########################################

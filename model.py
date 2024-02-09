@@ -15,6 +15,8 @@ import utils as utils
 from metrics.eval import calculate_metrics
 import loss
 from PIL import Image
+from typing import Dict, Tuple, Optional, List, Union
+
 from torchvision.utils import draw_bounding_boxes
 
 
@@ -184,7 +186,7 @@ class StarFormer(nn.Module):
                     )
                 ):
                     parameter_F = []
-                    _, _, features, _ = loss.model_generation(
+                    _, _, features, _ = self.model_generation(
                         model=model,
                         inputs=inputs,
                         refs=refs,
@@ -211,49 +213,57 @@ class StarFormer(nn.Module):
                         parameter_F, lr=float(cfg.TRAIN.lr)
                     )
 
+
+                # generate image from latent vector
+                fake_img_lat, _, features, s_trg = self.model_generation(
+                    model=model,
+                    inputs=inputs,
+                    refs=refs,
+                    lat_trg=inputs.lat_trg,
+                    n_bbox=cfg.TRAIN.n_bbox,
+                    from_lat=True,
+                    feat_layers=cfg.MODEL.feat_layers,
+                )
                 # ----------------------------------------------------------
                 # train the discriminator
-                # ----------------------------------------------------------
-                # from latent vector
+                # ----------------------------------------------------------                
+
                 total_D_loss, D_losses_lat = loss.compute_D_loss(
                     inputs=inputs,
                     refs=refs,
                     model=model,
+                    fake_img=fake_img_lat,
                     criterions=criterions,
                     cfg=cfg,
-                    from_lat=True,
                 )
                 # utils.set_requires_grad(model.Discriminator.module, True)
                 self._reset_grad()
                 total_D_loss.backward()
                 optimizer.Discriminator.step()
 
-                # from reference image
-                total_D_loss, D_losses_ref = loss.compute_D_loss(
-                    inputs=inputs,
-                    refs=refs,
-                    model=model,
-                    criterions=criterions,
-                    cfg=cfg,
-                    from_lat=False,
-                )
-
-                self._reset_grad()
-                total_D_loss.backward()
-                optimizer.Discriminator.step()
-                # ---------------------------------------------------------
-                # train the generator
-                # ---------------------------------------------------------
-                # from latent vector
-
-                G_loss, G_losses_lat, fake_image_lat, recon_img = loss.compute_G_loss(
+                G_loss, G_losses_lat = loss.compute_G_loss(
                     model=model,
                     inputs=inputs,
+                    fake_img=fake_img_lat,
+                    features=features,
+                    s_trg=s_trg,
                     refs=refs,
                     criterions=criterions,
                     cfg=cfg,
-                    from_lat=True,
                 )
+
+                if cfg.TRAIN.w_Cycle > 0.0:
+                    recon_img = self.model_reconstruction(
+                        inputs=inputs,
+                        fake_img=fake_img_lat,
+                        model=model,
+                        d_trg=refs.d_trg,
+                    )
+                    cycle_loss = cfg.TRAIN.w_Cycle * loss.compute_cycle_loss(
+                        inputs.img_src, recon_img, criterions.Cycle
+                    )
+                    G_loss += cycle_loss
+                    G_losses_lat.cycle_loss = cycle_loss
                 # utils.set_requires_grad(model.Discriminator.module, False)
                 self._reset_grad()
                 G_loss.backward()
@@ -267,25 +277,75 @@ class StarFormer(nn.Module):
                 if cfg.TRAIN.w_NCE > 0.0:
                     optimizer.MLPHead.step()
 
-                # from reference image
-                G_loss, G_losses_ref, fake_image_ref, recon_img = loss.compute_G_loss(
+                # ---------------------------------------------------------
+                # generate image from reference image
+                # ---------------------------------------------------------
+                fake_img_ref, fake_box, features, s_trg = self.model_generation(
                     model=model,
+                    inputs=inputs,
+                    refs=refs,
+                    lat_trg=inputs.lat_trg,
+                    n_bbox=cfg.TRAIN.n_bbox,
+                    from_lat=False,
+                    feat_layers=cfg.MODEL.feat_layers,
+                )        
+
+
+                #---------------------------------------------------------
+                # train the discriminator            
+                #---------------------------------------------------------
+                total_D_loss, D_losses_ref = loss.compute_D_loss(
+                    inputs=inputs,
+                    refs=refs,
+                    fake_img=fake_img_ref,
+                    model=model,
+                    criterions=criterions,
+                    cfg=cfg,
+                )
+
+                self._reset_grad()
+                total_D_loss.backward()
+                optimizer.Discriminator.step()
+                # ---------------------------------------------------------
+                # train the generator
+                # ---------------------------------------------------------
+                G_loss, G_losses_ref = loss.compute_G_loss(
+                    model=model,
+                    fake_img=fake_img_ref,
+                    s_trg=s_trg,
+                    features=features,
                     inputs=inputs,
                     refs=refs,
                     criterions=criterions,
                     cfg=cfg,
-                    from_lat=False,
                 )
 
+                if cfg.TRAIN.w_Cycle > 0.0:
+                    recon_img = self.model_reconstruction(
+                        inputs=inputs,
+                        fake_img=fake_img_ref,
+                        model=model,
+                        d_trg=refs.d_trg,
+                    )
+                    cycle_loss = cfg.TRAIN.w_Cycle * loss.compute_cycle_loss(
+                        inputs.img_src, recon_img, criterions.Cycle
+                    )
+                    G_loss += cycle_loss
+                    G_losses_ref.cycle_loss = cycle_loss
+
+                # utils.set_requires_grad(model.Discriminator.module, False)
                 self._reset_grad()
                 G_loss.backward()
+
                 optimizer.ContentEncoder.step()
                 optimizer.TransformerGen.step()
                 optimizer.TransformerEnc.step()
                 optimizer.MLPAdain.step()
-                # According to StarGAN-v2, the MappingNetwork and StyleEncoder are not updated
+                optimizer.MappingNetwork.step()
+                optimizer.StyleEncoder.step()
                 if cfg.TRAIN.w_NCE > 0.0:
                     optimizer.MLPHead.step()
+
 
                 # compute moving average of network parameters
                 moving_average(
@@ -295,8 +355,8 @@ class StarFormer(nn.Module):
 
                 losses = Munch()
                 losses.D_lat = D_losses_lat
-                losses.D_ref = D_losses_ref
                 losses.G_lat = G_losses_lat
+                losses.D_ref = D_losses_ref
                 losses.G_ref = G_losses_ref
 
                 # decay weight for diversity sensitive loss
@@ -316,9 +376,9 @@ class StarFormer(nn.Module):
                     if (i % cfg.VISUAL.display_sample_iter) == 0:
                         current_visuals = {
                             "input_img": inputs.img_src,
-                            "generated_img_lat": fake_image_lat,
+                            "generated_img_lat": fake_img_lat,
                             "reference_img": refs.img_ref,
-                            "generated_img_ref": fake_image_ref,
+                            "generated_img_ref": fake_img_ref,
                         }
                         current_domains = {
                             "source_domain": inputs.d_src,
@@ -352,9 +412,9 @@ class StarFormer(nn.Module):
                         [
                             inputs.img_src,
                             domain_imgs,
-                            fake_image_lat,
+                            fake_img_lat,
                             refs.img_ref,
-                            fake_image_ref,
+                            fake_img_ref,
                         ],
                         dim=0,
                     ).flatten(0, 1)
@@ -430,6 +490,109 @@ class StarFormer(nn.Module):
         self._load_checkpoint(args.resume_iter)
         calculate_metrics(model_ema, args, step=resume_iter, mode="latent")
         calculate_metrics(model_ema, args, step=resume_iter, mode="reference")
+
+    def model_generation(
+        self,
+        inputs: Union[torch.Tensor, dict],
+        refs,
+        lat_trg,
+        model: dict,
+        from_lat: bool = True,
+        n_bbox: int = -1,
+        feat_layers: List[str] = [],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Forward pass of the generation model.
+
+        Args:
+            inputs (Union[torch.Tensor, dict]): Input tensor or dictionary containing input tensors.
+            model (dict): Dictionary containing the model components.
+            n_bbox (int, optional): Number of bounding boxes. Defaults to -1.
+            feat_layers (List[str], optional): List of feature layers. Defaults to [].
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: Tuple containing the generated fake image, fake box, and features.
+        """
+        # when performing generation, the input is the content image from the data loader
+        feat_content, features = model.ContentEncoder(inputs.img_src, feat_layers)
+        style_code_src = model.StyleEncoder(inputs.img_src, inputs.d_src)
+        if from_lat:
+            style_code_trg = model.MappingNetwork(lat_trg, refs.d_trg)
+        else:
+            style_code_trg = model.StyleEncoder(refs.img_ref, refs.d_trg)
+        utils.apply_adain_params(
+            model=model.TransformerEnc.module.transformer,
+            adain_params=model.MLPAdain(style_code_src),
+        )
+        if "bbox" in inputs and n_bbox != -1:
+            features += [
+                model.TransformerEnc.module.embedding.extract_box_feature(
+                    feat_content, inputs.bbox, n_bbox
+                )
+            ]
+
+        if n_bbox == -1:
+            aggregated_feat, _, _ = model.TransformerEnc(
+                feat_content, sem_embed=True, sem_labels=inputs.seg, n_bbox=n_bbox
+            )
+        else:
+            aggregated_feat, aggregated_box, weights = model.TransformerEnc(
+                feat_content, sem_labels=inputs.seg, bbox_info=inputs.bbox, n_bbox=n_bbox
+            )
+        utils.apply_adain_params(
+            model=model.TransformerGen.module, adain_params=model.MLPAdain(style_code_trg)
+        )
+        fake = model.TransformerGen(aggregated_feat)
+        fake_box = (
+            model.TransformerGen(aggregated_box, inputs.bbox)
+            if n_bbox != -1 in inputs
+            else None
+        )
+        # logging.info('model forward generation d_src_pred: {}'.format(d_src_pred))
+        return fake, fake_box, features, style_code_trg
+
+
+    def model_reconstruction(
+        self,
+        inputs: Union[torch.Tensor, dict],
+        fake_img: torch.Tensor,
+        model: dict,
+        d_trg: torch.Tensor,
+        feat_layers: List[str] = [],
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Forward pass of the model for image reconstruction.
+
+        Args:
+            fake_img (torch.Tensor): The input fake image tensor.
+            model (dict): The model dictionary containing the content encoder, style encoder, MLP Adain, transformer, and generator.
+            d_src_pred (torch.Tensor): The source domain tensor.
+            feat_layers (List[str], optional): List of feature layers. Defaults to [].
+
+        Returns:
+            Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: A tuple containing the reconstructed image tensor, style code tensor, and aggregated feature tensor.
+        """
+        feat_content, _ = model.ContentEncoder(fake_img, feat_layers)
+
+        # replace empty domain with predicted domain
+        style_code_fake = model.StyleEncoder(fake_img, d_trg)
+        style_code_rec = model.StyleEncoder(inputs.img_src, inputs.d_src)
+        # use mapping network to generate a style code for the reconstruction
+        utils.apply_adain_params(
+            model.MLPAdain(style_code_fake),
+            model.TransformerEnc.module.transformer,
+        )
+        # use segmenation map from source also for reconstruction
+        aggregated_feat, _, _ = model.TransformerEnc(
+            feat_content, sem_embed=True, sem_labels=inputs.seg, n_bbox=-1
+        )
+        utils.apply_adain_params(
+            model=model.TransformerGen.module, adain_params=model.MLPAdain(style_code_rec)
+        )
+        # aggregated_feat, _, weights = model.TransformerEnc(feat_content, sem_embed=False, n_bbox=-1)
+        rec_img = model.TransformerGen(aggregated_feat)
+        return rec_img
+
 
 
 def moving_average(model, model_test, beta=0.999):

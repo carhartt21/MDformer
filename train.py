@@ -109,6 +109,9 @@ if __name__ == "__main__":
         ref_list=ref_list,
         target_domain_names=cfg.DATASET.target_domain_names,
         normalize=cfg.TRAIN.img_norm,
+        num_workers=cfg.TRAIN.num_workers,
+        max_n_bbox=cfg.TRAIN.n_bbox,
+        seg_threshold=0.8,  
     )
 
     visualizer = Visualizer(
