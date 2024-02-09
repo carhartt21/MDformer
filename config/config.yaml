@@ -14,10 +14,10 @@ TRAIN:
   scheduler_step_size: 150
   w_GAN: 2.0 # weight for GAN loss
   w_StyleRecon: 5.0 # weight for style recon loss
-  w_StyleDiv: 5.0 # weight for style loss
+  w_StyleDiv: 0.0 # weight for style loss
   w_NCE: 1.0 # weight for NCE loss
   w_Instance_NCE: 1.0 # weight for instance NCE loss
-  n_bbox: 4 # # box
+  n_bbox: -1 # # box
   w_Cycle : 2.0
   
   save_epoch: 5 # frequency of saving checkpoints at the end of epochs
@@ -34,10 +34,10 @@ MODEL:
   weight_path: None # if training from scratch, set this as None
   feat_layers: [0,4,8] # compute NCE loss on which layers
   num_patches: 256 # number of patches per layer
-  patch_size: 8 # patch size
+  patch_size: 4  # patch size
   num_neg: 64 # number of negative samples
   num_pos: 1 # number of positive samples
-  img_size: (384, 384) # scale images to this size
+  img_size: (256, 256) # scale images to this size
   fc_dim : 2048
   # Style code dimension
   style_dim : 64
@@ -45,9 +45,8 @@ MODEL:
   latent_dim : 16
   # dimension of the semantic embedding
   sem_embed_dim : 32
-  # Mapping Network hidden dimension
   # number of content channels
-  content_dim : 256
+  content_dim : 128
   # number of downsampling layers in the content encoder
   n_downsampling : 2
   # number of input filters of the generator
@@ -56,9 +55,7 @@ MODEL:
   n_discriminator_filters : 64
   # hidden dimension in the mapping network
   hidden_dim : 512
-  TRANSFORMER:
-    # number of input channels of the transformer
-    embed_C : 1024
+  VIT:
     # number of feature channels of the transformer
     feat_C : 256
     # number of transformer layers
@@ -68,8 +65,9 @@ MODEL:
     # dimension of each head
     mlp_dim : 4352
 
-
-
+  SWIN:
+    # number of input channels of the transformer
+    embed_C : 1024
 
 DATASET:
   target_domain_names: ['summer', 'winter', 'spring', 'autumn'] # domains to be used for training
@@ -80,15 +78,15 @@ DATASET:
 
 VISUAL:
   visdom: True # visualize the training process using visdom
-  display_sample_iter: 1 # frequency of displaying the latest results in visdom
-  display_losses_iter: 1 # frequency of displaying losses in visdom  
+  display_sample_iter: 500 # frequency of displaying the latest results in visdom
+  display_losses_iter: 100 # frequency of displaying losses in visdom  
   display_winsize: 256 # visdom display size
-  image_save_iter: 1 # frequency of saving the latest training images
-  print_losses_iter: 1 # frequency of showing training results on console  
+  image_save_iter: 500 # frequency of saving the latest training images
+  print_losses_iter: 50 # frequency of showing training results on console  
   display_ncols:  4 # if positive, display all images in a single visdom web panel with certain number of images per row.
   display_id: 1 # window id of the web display.
   server: "http://localhost" # visdom server of the web display
   env:  'main' # visdom display environment name (default is "main")
   port: 8099 # visdom port of the web display
-  save_results_freq: 1 # frequency of saving training results to html
+  save_results_freq: 500 # frequency of saving training results to html
   save_intermediate: True # do not save intermediate training results to [opt.checkpoints_dir]/[opt.name]/web/
