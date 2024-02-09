@@ -415,41 +415,66 @@ def onehot_to_class(onehot):
 def user_scattered_collate(batch):
     return batch
 
-def assign_adain_params(adain_params, model):
-    # assign the adain_params to the AdaIN layers in model
-    for _, layer in enumerate(model):
-        m = layer[0].norm
+# def assign_adain_params(adain_params, model):
+#     # assign the adain_params to the AdaIN layers in model
+#     for _, layer in enumerate(model):
+#         m = layer[0].norm
 
-        mean = adain_params[:, :m.num_features]
-        std = adain_params[:, m.num_features:2*m.num_features]
+#         mean = adain_params[:, :m.num_features]
+#         std = adain_params[:, m.num_features:2*m.num_features]
         
-        m.bias = mean.contiguous().view(-1)
-        m.weight = std.contiguous().view(-1)
-        if adain_params.size(1) > 2*m.num_features:
-            adain_params = adain_params[:, 2*m.num_features:]
-        n = layer[1].norm
+#         m.bias = mean.contiguous().view(-1)
+#         m.weight = std.contiguous().view(-1)
+#         if adain_params.size(1) > 2*m.num_features:
+#             adain_params = adain_params[:, 2*m.num_features:]
+#         n = layer[1].norm
 
-        mean = adain_params[:, :n.num_features]
-        std = adain_params[:, n.num_features:2*n.num_features]
-        n.bias = mean.contiguous().view(-1)
-        n.weight = std.contiguous().view(-1)
-        if adain_params.size(1) > 2*n.num_features:
-            adain_params = adain_params[:, 2*n.num_features:]
+#         mean = adain_params[:, :n.num_features]
+#         std = adain_params[:, n.num_features:2*n.num_features]
+#         n.bias = mean.contiguous().view(-1)
+#         n.weight = std.contiguous().view(-1)
+#         if adain_params.size(1) > 2*n.num_features:
+#             adain_params = adain_params[:, 2*n.num_features:]
+
+def apply_adain_params(adain_params, model, type="swin"):
+    # assign the adain_params to the AdaIN layers in model
+    for layer in model.layers:
+        if type == "vit":
+            for _layer in layer:
+                if m.__class__.__name__ == "AdaptiveInstanceNorm2d":
+                    mean = adain_params[:, :_layer.num_features]
+                    std = adain_params[:, _layer.num_features:2*_layer.num_features]
+                    _layer.bias = mean.contiguous().view(-1)
+                    _layer.weight = std.contiguous().view(-1)
+                    # if adain_params.size(1) > 2*_layer.num_features:
+                    #     adain_params = adain_params[:, 2*_layer.num_features:]
+        elif type == "swin":
+            for swin_block in layer.blocks:
+                m = swin_block.norm1
+                mean = adain_params[:, :m.num_features]
+                std = adain_params[:, m.num_features:2*m.num_features]
+                m.bias = mean.contiguous().view(-1)
+                m.weight = std.contiguous().view(-1)
+                n = swin_block.norm2
+                mean = adain_params[:, :n.num_features]
+                std = adain_params[:, n.num_features:2*n.num_features]
+                n.bias = mean.contiguous().view(-1)
+                n.weight = std.contiguous().view(-1)
 
 def get_num_adain_params(model):
     # return the number of AdaIN parameters needed by the model
     num_adain_params = 0
     for m in model.layers:
-        if m.__class__.__name__ == "BasicLayer":
+        if m.__class__.__name__ == "BasicLayer" or m.__class__.__name__ == "StyleBasicLayer":
             for swin_block in m.blocks:
                 for layer in swin_block.children():
                     if layer.__class__.__name__ == "AdaptiveInstanceNorm2d":
-                        num_adain_params = 2*layer.num_features
-    logging.info(f'>>>>Number of AdaIN parameters: {num_adain_params}')                        
+                        num_adain_params = max(2*layer.num_features, num_adain_params)
+    logging.info(f'>>>> Number of AdaIN parameters: {num_adain_params}')                        
     return num_adain_params            
 
 def set_requires_grad(nets, requires_grad=False):
-    """Set requies_grad=Fasle for all the networks to avoid unnecessary computations
+    """Set requies_grad=False for all the networks to avoid unnecessary computations
     Parameters:
         nets (network list)   -- a list of networks
         requires_grad (bool)  -- whether the networks require gradients or not
