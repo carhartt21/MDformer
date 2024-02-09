@@ -36,7 +36,7 @@ _C.MODEL = CN()
 # name of the model
 _C.MODEL.name = "MDformer"
 # transformer type ('vit'| 'swin')
-_C.MODEL.transformer_type = "swin"
+_C.model.TransformerEnc_type = "swin"
 # load pretrained weights, False if training from scratch
 _C.MODEL.load_weight = False
 # load optimizer, False if training from scratch
@@ -60,17 +60,17 @@ _C.MODEL.num_neg = 64
 # number of positive samples for NCE loss
 _C.MODEL.num_pos = 1
 # input image size
-_C.MODEL.img_size = (384, 384)
+_C.MODEL.img_size = (512, 512)
 # Style code dimension
 _C.MODEL.style_dim = 64
 # Latent code dimension
 _C.MODEL.latent_dim = 16
 # dimension of the semantic embedding
-_C.MODEL.sem_embed_dim = 64
+_C.MODEL.sem_embed_dim = 32
 # Mapping Network hidden dimension
 _C.MODEL.hidden_dim = 512
 # number of content channels
-_C.MODEL.content_dim = 256
+_C.MODEL.content_dim = 480
 # number of downsampling layers in the content encoder
 _C.MODEL.n_downsampling = 2
 # number of input filters of the generator
@@ -78,7 +78,7 @@ _C.MODEL.n_generator_filters = 64
 # number of discriminator filters
 _C.MODEL.n_discriminator_filters = 64
 # patch embed dimension
-_C.MODEL.patch_embed_dim = 1024
+_C.MODEL.patch_embed_dim = 480
 # ------------------------------------------------------------------------------
 # Transformer parameters
 # ------------------------------------------------------------------------------
@@ -102,9 +102,9 @@ _C.MODEL.SWIN.patch_size = 4
 # embedding dimension
 _C.MODEL.SWIN.embed_C = 128
 # depth
-_C.MODEL.SWIN.depths = [2, 2, 6, 2]
+_C.MODEL.SWIN.depths = [2, 2, 2]
 # number of heads
-_C.MODEL.SWIN.num_heads = [3, 6, 12, 24]
+_C.MODEL.SWIN.num_heads = [4, 8, 8]
 # window sizes
 _C.MODEL.SWIN.window_size = 8
 # mlp ratio
@@ -119,6 +119,8 @@ _C.MODEL.SWIN.patch_norm = True
 _C.MODEL.SWIN.drop_path_rate = 0.1
 # attention dropout rate
 _C.MODEL.SWIN.attn_drop_rate = 0.0
+# select in which stages patch mergin shall be enabled
+_C.MODEL.SWIN.downsample = [True, True, False]
 
 
 # -----------------------------------------------------------------------------
