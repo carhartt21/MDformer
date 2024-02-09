@@ -37,39 +37,48 @@ def model_generation(
     """
     # when performing generation, the input is the content image from the data loader
     feat_content, features = model.ContentEncoder(inputs.img_src, feat_layers)
+    style_code_src = model.StyleEncoder(inputs.img_src, inputs.d_src)
     if from_lat:
-        style_code = model.MappingNetwork(lat_trg, refs.d_trg)
+        style_code_trg = model.MappingNetwork(lat_trg, refs.d_trg)
     else:
-        style_code = model.StyleEncoder(refs.img_ref, refs.d_trg)
-    model.Transformer.module.apply_adain_params(model.MLPAdain(style_code))
+        style_code_trg = model.StyleEncoder(refs.img_ref, refs.d_trg)
+    utils.apply_adain_params(
+        model=model.TransformerEnc.module.transformer,
+        adain_params=model.MLPAdain(style_code_src),
+    )
     if "bbox" in inputs and n_bbox != -1:
         features += [
-            model.Transformer.module.embedding.extract_box_feature(
+            model.TransformerEnc.module.embedding.extract_box_feature(
                 feat_content, inputs.bbox, n_bbox
             )
         ]
 
     if n_bbox == -1:
-        aggregated_feat, _, _ = model.Transformer(
+        aggregated_feat, _, _ = model.TransformerEnc(
             feat_content, sem_embed=True, sem_labels=inputs.seg, n_bbox=n_bbox
         )
     else:
-        aggregated_feat, aggregated_box, weights = model.Transformer(
+        aggregated_feat, aggregated_box, weights = model.TransformerEnc(
             feat_content, sem_labels=inputs.seg, bbox_info=inputs.bbox, n_bbox=n_bbox
         )
-
-    fake = model.Generator(aggregated_feat)
+    utils.apply_adain_params(
+        model=model.TransformerGen.module, adain_params=model.MLPAdain(style_code_trg)
+    )
+    fake = model.TransformerGen(aggregated_feat)
     fake_box = (
-        model.Generator(aggregated_box, inputs.bbox) if n_bbox != -1 in inputs else None
+        model.TransformerGen(aggregated_box, inputs.bbox)
+        if n_bbox != -1 in inputs
+        else None
     )
     # logging.info('model forward generation d_src_pred: {}'.format(d_src_pred))
-    return fake, fake_box, features, style_code
+    return fake, fake_box, features, style_code_trg
 
 
 def model_reconstruction(
     inputs: Union[torch.Tensor, dict],
     fake_img: torch.Tensor,
     model: dict,
+    d_trg: torch.Tensor,
     feat_layers: List[str] = [],
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
@@ -87,17 +96,22 @@ def model_reconstruction(
     feat_content, _ = model.ContentEncoder(fake_img, feat_layers)
 
     # replace empty domain with predicted domain
-    style_code = model.StyleEncoder(inputs.img_src, inputs.d_src)
+    style_code_fake = model.StyleEncoder(fake_img, d_trg)
+    style_code_rec = model.StyleEncoder(inputs.img_src, inputs.d_src)
     # use mapping network to generate a style code for the reconstruction
-    utils.assign_adain_params(
-        model.MLPAdain(style_code), model.Transformer.module.transformer.layers
+    utils.apply_adain_params(
+        model.MLPAdain(style_code_fake),
+        model.TransformerEnc.module.transformer,
     )
     # use segmenation map from source also for reconstruction
-    aggregated_feat, _, _ = model.Transformer(
+    aggregated_feat, _, _ = model.TransformerEnc(
         feat_content, sem_embed=True, sem_labels=inputs.seg, n_bbox=-1
     )
-    # aggregated_feat, _, weights = model.Transformer(feat_content, sem_embed=False, n_bbox=-1)
-    rec_img = model.Generator(aggregated_feat)
+    utils.apply_adain_params(
+        model=model.TransformerGen.module, adain_params=model.MLPAdain(style_code_rec)
+    )
+    # aggregated_feat, _, weights = model.TransformerEnc(feat_content, sem_embed=False, n_bbox=-1)
+    rec_img = model.TransformerGen(aggregated_feat)
     return rec_img
 
 
@@ -200,19 +214,20 @@ def compute_G_loss(
             fake_img, cfg.MODEL.feat_layers
         )
         if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0:
-            fake_box_feature = model.Transformer.module.embedding.extract_box_feature(
-                fake_feat_content, inputs.bbox, cfg.TRAIN.n_bbox
+            fake_box_feature = (
+                model.TransformerEnc.module.embedding.extract_box_feature(
+                    fake_feat_content, inputs.bbox, cfg.TRAIN.n_bbox
+                )
             )
-            
+
     if cfg.TRAIN.w_NCE > 0.0:
         G_losses.NCE_loss = cfg.TRAIN.w_NCE * compute_NCE_loss(
             feat_q=features,
             feat_k=features,
             model=model.MLPHead,
             criterionNCE=criterions.NCE,
-            num_patches=128
+            num_patches=128,
         )
-
 
     # if cfg.TRAIN.w_NCE > 0.0:
     #     G_losses.NCE_loss = cfg.TRAIN.w_NCE * compute_SemNCE_loss(
@@ -223,7 +238,7 @@ def compute_G_loss(
     #         num_patches=cfg.MODEL.num_patches,
     #         seg=inputs.seg
     #     )
-        
+
     if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0:
         valid_box = torch.where(inputs.bbox[:, :, 0] > 0, True, False).view(-1)
         if valid_box[valid_box == True].shape[0] == 0.0:
@@ -256,7 +271,7 @@ def compute_G_loss(
             inputs=inputs,
             fake_img=fake_img,
             model=model,
-            feat_layers=cfg.MODEL.feat_layers,
+            d_trg=refs.d_trg,
         )
         G_losses.cycle_loss = cfg.TRAIN.w_Cycle * compute_cycle_loss(
             inputs.img_src, recon_img, criterions.Cycle
@@ -359,20 +374,22 @@ def compute_SemNCE_loss(feat_q, feat_k, model, criterionNCE, num_patches, seg=No
     Returns:
         torch.Tensor: NCE loss.
     """
-    
 
     # sample from fake image
     feat_q_pool, sample_ids, _, _ = model(
         feats=feat_q, num_patches=num_patches, patch_ids=None
     )
     # sample from real image
-    feat_k_pool, _, feat_k_pos, feat_k_neg = model(feats=feat_k, num_patches=num_patches, patch_ids=sample_ids, seg=seg)
+    feat_k_pool, _, feat_k_pos, feat_k_neg = model(
+        feats=feat_k, num_patches=num_patches, patch_ids=sample_ids, seg=seg
+    )
 
     total_nce_loss = 0.0
     for f_q, f_k, f_k_p, f_k_n in zip(feat_q_pool, feat_k_pool, feat_k_pos, feat_k_neg):
         total_nce_loss += criterionNCE(f_q, f_k, f_k_p, f_k_n)
 
     return total_nce_loss
+
 
 def compute_NCE_loss(feat_q, feat_k, model, criterionNCE, num_patches, seg=None):
     """
@@ -388,7 +405,6 @@ def compute_NCE_loss(feat_q, feat_k, model, criterionNCE, num_patches, seg=None)
     Returns:
         torch.Tensor: NCE loss.
     """
-    
 
     feat_k_pool, sample_ids = model(
         feats=feat_k, num_patches=num_patches, patch_ids=None
@@ -400,6 +416,7 @@ def compute_NCE_loss(feat_q, feat_k, model, criterionNCE, num_patches, seg=None)
         total_nce_loss += criterionNCE(f_q, f_k).mean()
 
     return total_nce_loss / len(feat_q)
+
 
 def compute_InstNCE_loss(feat_q, feat_k, model, criterionNCE, num_patches):
     """
@@ -415,7 +432,6 @@ def compute_InstNCE_loss(feat_q, feat_k, model, criterionNCE, num_patches):
     Returns:
         torch.Tensor: NCE loss.
     """
-    
 
     feat_k_pool, sample_ids = model(
         feats=feat_k, num_patches=num_patches, patch_ids=None

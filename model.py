@@ -283,11 +283,11 @@ class StarFormer(nn.Module):
                 optimizer.Generator.step()
                 optimizer.Transformer.step()
                 optimizer.MLPAdain.step()
+                # According to StarGAN-v2, the MappingNetwork and StyleEncoder are not updated
                 if cfg.TRAIN.w_NCE > 0.0:
                     optimizer.MLPHead.step()
 
                 # compute moving average of network parameters
-                moving_average(model.Generator, model_ema.Generator, beta=0.999)
                 moving_average(
                     model.MappingNetwork, model_ema.MappingNetwork, beta=0.999
                 )

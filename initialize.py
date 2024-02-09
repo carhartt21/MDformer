@@ -1,23 +1,21 @@
-import random
-import os
-import logging
 import copy
-from munch import Munch
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-import numpy as np
-from collections import OrderedDict
+import logging
+import os
+import random
+from typing import Any, Dict
 
+import numpy as np
+import torch
+import torch.distributed as dist
+import torch.nn as nn
+import torch.nn.parallel
+from munch import Munch
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data.distributed import DistributedSampler
-import torch.distributed as dist
 
-from data.single_dataset import SingleDataset
-import utils
 import models
-from typing import Any, Dict, List, Tuple, Union
-from torch.nn.parallel import DataParallel
+from models import blocks
+import utils
 
 logging.basicConfig(level=logging.INFO)
 
@@ -69,7 +67,7 @@ def build_model(cfg):
     # TODO: add test mode
     logging.info(">> Building the ContentEncoder")
     ContentEncoder = nn.DataParallel(
-        models.ContentEncoder2(
+        models.ContentEncoderV2(
             input_channels=model_cfg.in_channels,
             ngf=model_cfg.n_generator_filters,
             n_downsampling=model_cfg.n_downsampling,
@@ -84,26 +82,21 @@ def build_model(cfg):
             num_domains=num_domains,
         )
     )
-    logging.info(">> Building the Transformer")
-    Transformer = nn.DataParallel(models.Transformer(model_cfg=model_cfg, vis=False))
-    logging.info(">> Building the Generator")
-    g_input_size = ((model_cfg.img_size[0] // model_cfg.n_downsampling**2)//model_cfg.patch_size)**2
-    Generator = nn.DataParallel(
-        models.Generator(
-            input_size=model_cfg.img_size[0] // model_cfg.n_downsampling**2,
-            patch_size=model_cfg.patch_size,
-            embed_C=model_cfg.patch_embed_dim + model_cfg.sem_embed_dim,
-            feat_C=g_input_size,
-            n_generator_filters=model_cfg.n_generator_filters,
-            n_downsampling=model_cfg.n_downsampling,
-        )
+    logging.info(">> Building the Transformer Encoder")
+    TransformerEncoder = nn.DataParallel(
+        models.Transformer(model_cfg=model_cfg, vis=False)
     )
-    logging.info(">> Building the MLP Block")
-    # continue here
+    logging.info(">> Building the Transformer Generator")
+    TransformerGenerator = nn.DataParallel(
+        models.swin_generator.SwinGenerator(model_cfg=model_cfg)
+    )
+    logging.info(">> Building the MLP Blocks")
     MLPAdain = nn.DataParallel(
-        models.MLP(
+        blocks.MLP(
             input_dim=model_cfg.style_dim,
-            output_dim=utils.get_num_adain_params(Transformer.module.transformer),
+            output_dim=utils.get_num_adain_params(
+                TransformerEncoder.module.transformer
+            ),
         )
     )
 
@@ -135,16 +128,14 @@ def build_model(cfg):
 
     ContentEncoder_ema = copy.deepcopy(ContentEncoder)
     StyleEncoder_ema = copy.deepcopy(StyleEncoder)
-    # Transformer_ema = copy.deepcopy(Transformer)
-    Generator_ema = copy.deepcopy(Generator)
     MappingNetwork_ema = copy.deepcopy(MappingNetwork)
 
     model = Munch(
         ContentEncoder=ContentEncoder,
         StyleEncoder=StyleEncoder,
-        Transformer=Transformer,
-        Generator=Generator,
-        MLPAdain=MLPAdain,
+        TransformerEnc=TransformerEncoder,
+        MLPAdain=MLPAdain,        
+        TransformerGen=TransformerGenerator,
         MappingNetwork=MappingNetwork,
         Discriminator=Discriminator,
         MLPHead=MLPHead,
@@ -155,66 +146,8 @@ def build_model(cfg):
     model_ema = Munch(
         ContentEncoder=ContentEncoder_ema,
         StyleEncoder=StyleEncoder_ema,
-        # Transformer=Transformer_ema,
-        Generator=Generator_ema,
         MappingNetwork=MappingNetwork_ema,
     )
-
-    # if model_cfg.load_weight:
-    #     logging.info("+ Loading Network weights")
-    #     for key in model_G.keys():
-    #         file = os.path.join(model_cfg.weight_path, f'{key}.pth')
-    #         if os.path.isfile(file):
-    #             logging.info(">> Success load weight {}".format(key))
-    #             model_load_dict = torch.load(file, map_location=device)
-    #             keys = model_load_dict.keys()
-    #             values = model_load_dict.values()
-
-    #             new_keys = []
-    #             for i, mykey in enumerate(keys):
-    #                 new_key = mykey[7:] #REMOVE 'module.'
-    #                 new_keys.append(new_key)
-    #             new_dict = OrderedDict(list(zip(new_keys,values)))
-    #             model_G[key].load_state_dict(new_dict)
-    #         else:
-    #             logging.info(">> Does not exist {}".format(file))
-
-    #     for key in model_D.keys():
-    #         file = os.path.join(model_cfg.weight_path, f'{key}.pth')
-    #         if os.path.isfile(file):
-    #             logging.info(">> Success load {} weight".format(key))
-    #             model_load_dict = torch.load(file, map_location=device)
-    #             keys = model_load_dict.keys()
-    #             values = model_load_dict.values()
-
-    #             new_keys = []
-    #             for _key in keys:
-    #                 new_key = _key[7:] #REMOVE 'module.'
-    #                 new_keys.append(new_key)
-    #             new_dict = OrderedDict(list(zip(new_keys,values)))
-    #             model_D[key].load_state_dict(new_dict)
-    #         else:
-    #             logging.info(">> Does not exist {}".format(file))
-    # for key, val in model.items():
-    #     # if 'MLPHead' not in key:
-    #     model[key] = nn.DataParallel(val)
-    # for key, val in model_ema.items():
-    # #     if 'MLPHead' not in key:
-    #     model[key] = nn.DataParallel(val)
-    #         model_ema[key] = nn.DataParallel(val)
-
-    # for key, val in model_D.items():
-    #     model_D[key] = nn.DataParallel(val)
-    #     model_D[key].to(device)
-    #     model_D[key].train()
-    #     parameter_D += list(val.parameters())
-
-    # for key, val in model_F.items():
-    #     model_F[key] = nn.DataParallel(val)
-    #     model_F[key].to(device)
-    #     model_F[key].train()
-    #     parameter_F += list(val.parameters())
-
     return model, model_ema
 
 
