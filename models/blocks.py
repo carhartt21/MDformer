@@ -429,7 +429,7 @@ class Downsample(nn.Module):
 class LinearBlock(nn.Module):
     """Linear block module. Functions: fully connected + normalization + activation."""
 
-    def __init__(self, input_dim, output_dim, norm="none", activation="relu"):
+    def __init__(self, input_dim, output_dim, norm=None, activation=None):
         super(LinearBlock, self).__init__()
         use_bias = True
         # initialize fully connected layer
@@ -437,34 +437,15 @@ class LinearBlock(nn.Module):
 
         # initialize normalization
         norm_dim = output_dim
-        if norm == "batch":
-            self.norm = nn.BatchNorm1d(norm_dim)
-        elif norm == "inst":
-            self.norm = nn.InstanceNorm1d(norm_dim)
-        elif norm == "ln":
-            self.norm = LayerNorm(norm_dim)
-        elif norm == "adain":
-            self.norm = AdaptiveInstanceNorm2d(norm_dim)
-        elif norm == "none":
+        if norm is not None:
+            self.norm = norm(norm_dim)
+        else:
             self.norm = None
-        else:
-            assert 0, "Unsupported normalization: {}".format(norm)
-
         # initialize activation
-        if activation == "relu":
-            self.activation = nn.ReLU(inplace=True)
-        elif activation == "lrelu":
-            self.activation = nn.LeakyReLU(0.2, inplace=True)
-        elif activation == "prelu":
-            self.activation = nn.PReLU()
-        elif activation == "selu":
-            self.activation = nn.SELU(inplace=True)
-        elif activation == "tanh":
-            self.activation = nn.Tanh()
-        elif activation == "none":
+        if activation is not None:
+            self.activation = activation()
+        else :
             self.activation = None
-        else:
-            assert 0, "Unsupported activation: {}".format(activation)
 
     def forward(self, x):
         out = self.fc(x)
@@ -568,6 +549,44 @@ class Downsample(nn.Module):
 
 
 ####################################    MLP Head   ####################################
+class MLP(nn.Module):
+    """
+    Multi-Layer Perceptron (MLP) module with n_blk linear layers.
+
+    Args:
+        input_dim (int): The input dimension of the MLP. Default is 8.
+        output_dim (int): The output dimension of the MLP. Default is 2048.
+        dim (int): The hidden dimension of each linear block in the MLP. Default is 256.
+        n_blk (int): The number of linear blocks in the MLP. Default is 3.
+        norm (str): The normalization type to be applied in each linear block. Default is 'none'.
+        activ (str): The activation function to be applied in each linear block. Default is 'relu'.
+
+    Attributes:
+        model (nn.Sequential): The sequential model that represents the MLP.
+
+    """
+
+    def __init__(self, input_dim=8, output_dim=2048, dim=256, n_blk=3, norm=None, activ=nn.ReLU):
+        super(MLP, self).__init__()
+        self.model = [LinearBlock(input_dim=input_dim, output_dim=dim, norm=norm, activation=activ)]
+        for _ in range(n_blk - 2):
+            self.model += [LinearBlock(input_dim = dim, output_dim = dim, norm=norm, activation=activ)]
+        self.model += [LinearBlock(input_dim = dim, output_dim = output_dim, norm=None, activation=None)] # no output activations
+        self.model = nn.Sequential(*self.model)
+
+    def forward(self, x):
+        """
+        Forward pass of the MLP.
+
+        Args:
+            x (torch.Tensor): The input tensor.
+
+        Returns:
+            torch.Tensor: The output tensor.
+
+        """
+        test = self.model(x)
+        return test
 
 
 class Normalize(nn.Module):
@@ -583,3 +602,210 @@ class Normalize(nn.Module):
 
 
 ####################################    MLP Head   ####################################
+
+####################################    Style Layers   ####################################
+class Blur(nn.Module):
+    def __init__(self, kernel, pad, upsample_factor=1):
+        super().__init__()
+
+        kernel = make_kernel(kernel)
+
+        if upsample_factor > 1:
+            kernel = kernel * (upsample_factor ** 2)
+
+        self.register_buffer('kernel', kernel)
+
+        self.pad = pad
+
+    def forward(self, input):
+        out = upfirdn2d(input, self.kernel, pad=self.pad)
+
+        return out
+
+
+class PixelNorm(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, input):
+        return input * torch.rsqrt(torch.mean(input ** 2, dim=1, keepdim=True) + 1e-8)
+
+
+
+class ScaledLeakyReLU(nn.Module):
+    def __init__(self, negative_slope=0.2):
+        super().__init__()
+
+        self.negative_slope = negative_slope
+
+    def forward(self, input):
+        out = F.leaky_relu(input, negative_slope=self.negative_slope)
+
+        return out * math.sqrt(2)
+
+
+class SinusoidalPositionalEmbedding(nn.Module):
+    """Sinusoidal Positional Embedding 1D or 2D (SPE/SPE2d).
+
+    This module is a modified from:
+    https://github.com/pytorch/fairseq/blob/master/fairseq/modules/sinusoidal_positional_embedding.py # noqa
+
+    Based on the original SPE in single dimension, we implement a 2D sinusoidal
+    positional encodding (SPE2d), as introduced in Positional Encoding as
+    Spatial Inductive Bias in GANs, CVPR'2021.
+
+    Args:
+        embedding_dim (int): The number of dimensions for the positional
+            encoding.
+        padding_idx (int | list[int]): The index for the padding contents. The
+            padding positions will obtain an encoding vector filling in zeros.
+        init_size (int, optional): The initial size of the positional buffer.
+            Defaults to 1024.
+        div_half_dim (bool, optional): If true, the embedding will be divided
+            by :math:`d/2`. Otherwise, it will be divided by
+            :math:`(d/2 -1)`. Defaults to False.
+        center_shift (int | None, optional): Shift the center point to some
+            index. Defaults to None.
+    """
+
+    def __init__(self,
+                 embedding_dim,
+                 padding_idx,
+                 init_size=1024,
+                 div_half_dim=False,
+                 center_shift=None):
+        super().__init__()
+        self.embedding_dim = embedding_dim
+        self.padding_idx = padding_idx
+        self.div_half_dim = div_half_dim
+        self.center_shift = center_shift
+
+        self.weights = SinusoidalPositionalEmbedding.get_embedding(
+            init_size, embedding_dim, padding_idx, self.div_half_dim)
+
+        self.register_buffer('_float_tensor', torch.FloatTensor(1))
+
+        self.max_positions = int(1e5)
+
+    @staticmethod
+    def get_embedding(num_embeddings,
+                      embedding_dim,
+                      padding_idx=None,
+                      div_half_dim=False):
+        """Build sinusoidal embeddings.
+
+        This matches the implementation in tensor2tensor, but differs slightly
+        from the description in Section 3.5 of "Attention Is All You Need".
+        """
+        assert embedding_dim % 2 == 0, (
+            'In this version, we request '
+            f'embedding_dim divisible by 2 but got {embedding_dim}')
+
+        # there is a little difference from the original paper.
+        half_dim = embedding_dim // 2
+        if not div_half_dim:
+            emb = np.log(10000) / (half_dim - 1)
+        else:
+            emb = np.log(1e4) / half_dim
+        # compute exp(-log10000 / d * i)
+        emb = torch.exp(torch.arange(half_dim, dtype=torch.float) * -emb)
+        emb = torch.arange(
+            num_embeddings, dtype=torch.float).unsqueeze(1) * emb.unsqueeze(0)
+        emb = torch.cat([torch.sin(emb), torch.cos(emb)],
+                        dim=1).view(num_embeddings, -1)
+        if padding_idx is not None:
+            emb[padding_idx, :] = 0
+
+        return emb
+
+    def forward(self, input, **kwargs):
+        """Input is expected to be of size [bsz x seqlen].
+
+        Returned tensor is expected to be of size  [bsz x seq_len x emb_dim]
+        """
+        assert input.dim() == 2 or input.dim(
+        ) == 4, 'Input dimension should be 2 (1D) or 4(2D)'
+
+        if input.dim() == 4:
+            return self.make_grid2d_like(input, **kwargs)
+
+        b, seq_len = input.shape
+        max_pos = self.padding_idx + 1 + seq_len
+
+        if self.weights is None or max_pos > self.weights.size(0):
+            # recompute/expand embedding if needed
+            self.weights = SinusoidalPositionalEmbedding.get_embedding(
+                max_pos, self.embedding_dim, self.padding_idx)
+        self.weights = self.weights.to(self._float_tensor)
+
+        positions = self.make_positions(input, self.padding_idx).to(
+            self._float_tensor.device)
+
+        return self.weights.index_select(0, positions.view(-1)).view(
+            b, seq_len, self.embedding_dim).detach()
+
+    def make_positions(self, input, padding_idx):
+        mask = input.ne(padding_idx).int()
+        return (torch.cumsum(mask, dim=1).type_as(mask) *
+                mask).long() + padding_idx
+
+    def make_grid2d(self, height, width, num_batches=1, center_shift=None):
+        h, w = height, width
+        # if `center_shift` is not given from the outside, use
+        # `self.center_shift`
+        if center_shift is None:
+            center_shift = self.center_shift
+
+        h_shift = 0
+        w_shift = 0
+        # center shift to the input grid
+        if center_shift is not None:
+            # if h/w is even, the left center should be aligned with
+            # center shift
+            if h % 2 == 0:
+                h_left_center = h // 2
+                h_shift = center_shift - h_left_center
+            else:
+                h_center = h // 2 + 1
+                h_shift = center_shift - h_center
+
+            if w % 2 == 0:
+                w_left_center = w // 2
+                w_shift = center_shift - w_left_center
+            else:
+                w_center = w // 2 + 1
+                w_shift = center_shift - w_center
+
+        # Note that the index is started from 1 since zero will be padding idx.
+        # axis -- (b, h or w)
+        x_axis = torch.arange(1, w + 1).unsqueeze(0).repeat(num_batches,
+                                                            1) + w_shift
+        y_axis = torch.arange(1, h + 1).unsqueeze(0).repeat(num_batches,
+                                                            1) + h_shift
+
+        # emb -- (b, emb_dim, h or w)
+        x_emb = self(x_axis).transpose(1, 2)
+        y_emb = self(y_axis).transpose(1, 2)
+
+        # make grid for x/y axis
+        # Note that repeat will copy data. If use learned emb, expand may be
+        # better.
+        x_grid = x_emb.unsqueeze(2).repeat(1, 1, h, 1)
+        y_grid = y_emb.unsqueeze(3).repeat(1, 1, 1, w)
+
+        # cat grid -- (b, 2 x emb_dim, h, w)
+        grid = torch.cat([x_grid, y_grid], dim=1)
+        return grid.detach()
+
+    def make_grid2d_like(self, x, center_shift=None):
+        """Input tensor with shape of (b, ..., h, w) Return tensor with shape
+        of (b, 2 x emb_dim, h, w)
+
+        Note that the positional embedding highly depends on the the function,
+        ``make_positions``.
+        """
+        h, w = x.shape[-2:]
+        grid = self.make_grid2d(h, w, x.size(0), center_shift)
+
+        return grid.to(x)
+####################################    Style Layer   ####################################
