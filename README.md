@@ -6,6 +6,7 @@
 
 
 ### Datasets
+* ADE20k
 * INIT [[dataset]](https://zhiqiangshen.com/projects/INIT/index.html)
 * OUTSIDE15k 
 
@@ -28,14 +29,6 @@ test.py
 
 ### Config Path
 
-
-config/base_train.yaml
-
-config/base_test.yaml
-
-
-
-### BibTeX
-If you find this research useful, please consider citing:
+config/config.yaml
 
 
