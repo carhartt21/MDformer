@@ -5,8 +5,8 @@ TRAIN:
   start_epoch: 0 # if resume, set this as a number
   end_epoch: 100 # number of epochs of training
   #contnue here
-  batch_size_per_gpu: 8 # input batch size
-  num_workers: 16 # # threads for loading data
+  batch_size_per_gpu: 10 # input batch size
+  num_workers: 20 # # threads for loading data
   lr: 2e-4 # initial global learning rate
   lr_MN: 1e-6 # initial learning rate for the mapping network
   optim_beta: [0.5, 0.999] # momentum terms of adam
@@ -16,7 +16,7 @@ TRAIN:
   w_StyleRecon: 5.0 # weight for style recon loss
   w_StyleDiv: 0.0 # weight for style loss
   w_NCE: 1.0 # weight for NCE loss
-  w_Instance_NCE: 1.0 # weight for instance NCE loss
+  w_Instance_NCE: 0.0 # weight for instance NCE loss
   n_bbox: -1 # # box
   w_Cycle : 2.0
   
@@ -33,7 +33,7 @@ MODEL:
   weight_path : None # if training from scratch, set this as None
   weight_path: None # if training from scratch, set this as None
   feat_layers: [0,4,8] # compute NCE loss on which layers
-  num_patches: 256 # number of patches per layer
+  num_patches: 128 # number of patches per layer
   patch_size: 4  # patch size
   num_neg: 64 # number of negative samples
   num_pos: 1 # number of positive samples

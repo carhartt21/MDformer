@@ -169,6 +169,7 @@ class StarFormer(nn.Module):
 
             box_feature = torch.empty(1).to(device)
             for i in range(0, cfg.TRAIN.epoch_iters // cfg.TRAIN.batch_size_per_gpu):
+                # logging.info(f"++++ Getting input data")
                 inputs, refs = next(input_provider)
 
                 # recon_img = torch.zeros(fake_img.shape).to(device)
@@ -181,7 +182,7 @@ class StarFormer(nn.Module):
                         cfg.TRAIN.w_NCE != 0.0
                         or (
                             cfg.TRAIN.w_Instance_NCE != 0.0
-                            and cfg.TRAIN.data.n_bbox > 0
+                            and cfg.TRAIN.n_bbox > 0
                         )
                     )
                 ):
@@ -214,7 +215,8 @@ class StarFormer(nn.Module):
                     )
 
 
-                # generate image from latent vector
+                # generate fake image from latent vector
+                # logging.info(f"++++ Generating image from latent vector")
                 fake_img_lat, _, features, s_trg = self.model_generation(
                     model=model,
                     inputs=inputs,
@@ -224,10 +226,8 @@ class StarFormer(nn.Module):
                     from_lat=True,
                     feat_layers=cfg.MODEL.feat_layers,
                 )
-                # ----------------------------------------------------------
                 # train the discriminator
-                # ----------------------------------------------------------                
-
+                # logging.info(f"++++ Training the discriminator")
                 total_D_loss, D_losses_lat = loss.compute_D_loss(
                     inputs=inputs,
                     refs=refs,
@@ -237,10 +237,12 @@ class StarFormer(nn.Module):
                     cfg=cfg,
                 )
                 # utils.set_requires_grad(model.Discriminator.module, True)
+                # logging.info(f"++++ Backward pass for the discriminator")
                 self._reset_grad()
                 total_D_loss.backward()
                 optimizer.Discriminator.step()
 
+                # logging.info(f"++++ Training the generator")
                 G_loss, G_losses_lat = loss.compute_G_loss(
                     model=model,
                     inputs=inputs,
@@ -250,8 +252,9 @@ class StarFormer(nn.Module):
                     refs=refs,
                     criterions=criterions,
                     cfg=cfg,
+                    num_patches=cfg.MODEL.num_patches,
                 )
-
+                # logging.info(f"++++ Reconstruction input image")
                 if cfg.TRAIN.w_Cycle > 0.0:
                     recon_img = self.model_reconstruction(
                         inputs=inputs,
@@ -265,6 +268,7 @@ class StarFormer(nn.Module):
                     G_loss += cycle_loss
                     G_losses_lat.cycle_loss = cycle_loss
                 # utils.set_requires_grad(model.Discriminator.module, False)
+                # logging.info(f"++++ Backward pass for the generator")
                 self._reset_grad()
                 G_loss.backward()
 
@@ -280,6 +284,7 @@ class StarFormer(nn.Module):
                 # ---------------------------------------------------------
                 # generate image from reference image
                 # ---------------------------------------------------------
+                # logging.info(f"++++ Generating image from reference image")
                 fake_img_ref, fake_box, features, s_trg = self.model_generation(
                     model=model,
                     inputs=inputs,
@@ -294,6 +299,7 @@ class StarFormer(nn.Module):
                 #---------------------------------------------------------
                 # train the discriminator            
                 #---------------------------------------------------------
+                # logging.info(f"++++ Training the discriminator")
                 total_D_loss, D_losses_ref = loss.compute_D_loss(
                     inputs=inputs,
                     refs=refs,
@@ -302,13 +308,14 @@ class StarFormer(nn.Module):
                     criterions=criterions,
                     cfg=cfg,
                 )
-
+                # logging.info(f"++++ Backward pass for the discriminator")
                 self._reset_grad()
                 total_D_loss.backward()
                 optimizer.Discriminator.step()
                 # ---------------------------------------------------------
                 # train the generator
                 # ---------------------------------------------------------
+                # logging.info(f"++++ Training the generator")
                 G_loss, G_losses_ref = loss.compute_G_loss(
                     model=model,
                     fake_img=fake_img_ref,
@@ -318,7 +325,9 @@ class StarFormer(nn.Module):
                     refs=refs,
                     criterions=criterions,
                     cfg=cfg,
+                    num_patches=cfg.MODEL.num_patches,
                 )
+                # logging.info(f"++++ Reconstruction input image")
 
                 if cfg.TRAIN.w_Cycle > 0.0:
                     recon_img = self.model_reconstruction(
@@ -334,6 +343,7 @@ class StarFormer(nn.Module):
                     G_losses_ref.cycle_loss = cycle_loss
 
                 # utils.set_requires_grad(model.Discriminator.module, False)
+                # logging.info(f"++++ Backward pass for the generator")
                 self._reset_grad()
                 G_loss.backward()
 
@@ -348,6 +358,7 @@ class StarFormer(nn.Module):
 
 
                 # compute moving average of network parameters
+                # logging.info(f"++++ Moving average of network parameters")
                 moving_average(
                     model.MappingNetwork, model_ema.MappingNetwork, beta=0.999
                 )
@@ -360,13 +371,14 @@ class StarFormer(nn.Module):
                 losses.G_ref = G_losses_ref
 
                 # decay weight for diversity sensitive loss
+                # logging.info(f"++++ Decaying weight for diversity sensitive loss")
                 if cfg.TRAIN.lambda_StyleDiv > 0:
                     cfg.TRAIN.lambda_StyleDiv -= (
                         initial_lambda_ds / cfg.TRAIN.w_StyleDiv_iter
                     )
 
                 total_iters = epoch * cfg.TRAIN.epoch_iters + i
-
+                # logging.info(f"++++ Generating output")
                 # print info to visdom
                 if cfg.VISUAL.visdom:
                     if (i % cfg.VISUAL.display_losses_iter) == 0:

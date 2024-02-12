@@ -138,10 +138,13 @@ def build_model(cfg):
         TransformerGen=TransformerGenerator,
         MappingNetwork=MappingNetwork,
         Discriminator=Discriminator,
-        MLPHead=MLPHead,
-        MLPHead2=MLPHead2,
-        MLPHeadInst=MLPHeadInst,
     )
+
+    if cfg.TRAIN.w_NCE > 0.0:
+        model.MLPHead = MLPHead
+        # model.MLPHead2 = MLPHead2
+    if cfg.TRAIN.w_Instance_NCE > 0.0:
+        model.MLPHeadInst = MLPHeadInst
 
     model_ema = Munch(
         ContentEncoder=ContentEncoder_ema,

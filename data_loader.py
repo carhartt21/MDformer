@@ -294,7 +294,7 @@ def _make_balanced_sampler(labels, target_domain_names=[]):
 
 
 def get_train_loader(
-    img_size: Tuple(int) = (256, 256),
+    img_size: Tuple[int, int] = (256, 256),
     batch_size: int = 8,
     prob: float = 0.5,
     num_workers: int = 8,
@@ -335,7 +335,7 @@ def get_train_loader(
             ct.HorizontalFlip(),
             ct.ToTensor(),
             ct.Normalize(mean=mean, std=std),
-            ct.SegMaskToBBoxes([1, 7, 14], n_bbox=max_n_bbox),
+            # ct.SegMaskToBBoxes([1, 7, 14], n_bbox=max_n_bbox),
             # ct.SegMaskToPatches(8, seg_threshold),
         ]
     )
@@ -545,7 +545,8 @@ class TrainProvider:
             seg=sample.seg_masks,
             lat_trg=lat_trg,
             lat_trg_2=lat_trg_2,
-            bbox=sample.bboxes,
+            # bbox=sample.bboxes,
+            # bbox=None,
         )
         refs = Munch(img_ref=sample.ref_img, d_trg=sample.trg_domain)
         inputs = Munch({k: v.to(self.device) for k, v in inputs.items()})

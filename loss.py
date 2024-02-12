@@ -64,6 +64,7 @@ def compute_G_loss(
     criterions: Dict,
     features: List[torch.Tensor],
     cfg: object,
+    num_patches: int = 256,
 ) -> Tuple[float, Dict]:
     # fake_img, box_feature, features, s_trg = model_generation(
     #     inputs=inputs,
@@ -80,7 +81,7 @@ def compute_G_loss(
 
     G_losses = Munch()
     total_G_loss = 0
-
+    # logging.info("Generating GAN loss...")
     # fake_img = fake_imgs[0]
     if cfg.TRAIN.w_GAN > 0.0:
         G_losses.GAN_loss = cfg.TRAIN.w_GAN * compute_GAN_loss(
@@ -89,13 +90,13 @@ def compute_G_loss(
             model.Discriminator,
             criterions.GAN,
         )
-
+    # logging.info("Generating Cycle loss...")
     if cfg.TRAIN.w_StyleRecon > 0.0:
         s_fake = model.StyleEncoder(fake_img, refs.d_trg)
         G_losses.style_loss = cfg.TRAIN.w_StyleRecon * compute_style_recon_loss(
             s_fake, s_trg, criterions.Idt
         )
-
+    # logging.info("Generating NCE loss...")
     if cfg.TRAIN.w_NCE > 0.0 or (
         cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0
     ):
@@ -115,7 +116,7 @@ def compute_G_loss(
             feat_k=features,
             model=model.MLPHead,
             criterionNCE=criterions.NCE,
-            num_patches=128,
+            num_patches=num_patches,
         )
 
     # if cfg.TRAIN.w_NCE > 0.0:
