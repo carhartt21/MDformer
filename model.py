@@ -2,11 +2,17 @@ import os
 from os.path import join as ospj
 import time
 import datetime
+from PIL import Image
+from typing import Dict, Tuple, Optional, List, Union
 from munch import Munch
 import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torchvision.utils import draw_bounding_boxes
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 
 from initialize import build_model, set_criterions
 from util.checkpoint import CheckpointIO
@@ -14,23 +20,26 @@ from data_loader import TrainProvider, TestProvider
 import utils as utils
 from metrics.eval import calculate_metrics
 import loss
-from PIL import Image
-from typing import Dict, Tuple, Optional, List, Union
-
-from torchvision.utils import draw_bounding_boxes
-
 
 class StarFormer(nn.Module):
-    def __init__(self, cfg, mode, device):
+    def __init__(self, cfg, mode, local_rank, device=None):
         super().__init__()
         self.cfg = cfg
         self.device = device
+        self.local_rank = local_rank
+        logging.info(f"===== Initializing StarFormer device: {device} =====")
         # self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        self.model, self.model_ema = build_model(cfg)
+        self.model, self.model_ema = build_model(cfg, device=device)
+        # local_rank = int(os.environ.get("LOCAL_RANK", 0))
+        # torch.cuda.set_device(config.LOCAL_RANK)        
+        
+        if cfg.TRAIN.distributed:
+            for k, m in self.model.items():
+                if "MLPHead" not in k:
+                    self.model[k] = DDP(m, device_ids=[local_rank], output_device=local_rank, broadcast_buffers=False, find_unused_parameters=False)
         self.criterions = set_criterions(cfg=cfg, device=device)
 
-        # below setattrs are to make networks be children of Solver, e.g., for self.to(self.device)
         logging.info("===== Networks architecture =====")
         for name, module in self.model.items():
             utils.print_network(module=module, name=name)
@@ -40,6 +49,7 @@ class StarFormer(nn.Module):
 
         if mode == "train":
             self.optimizer = Munch()
+            parameters = []
             for net in self.model.keys():
                 skip = {}
                 skip_keywords = {}
@@ -49,23 +59,41 @@ class StarFormer(nn.Module):
                     skip_keywords = net.no_weight_decay_keywords()
                 if "MLPHead" in net:
                     continue
-                if net == "MappingNetwork" and cfg.TRAIN.lr_MN > 0.0:
-                    lr = cfg.TRAIN.lr_MN
-                elif net == "TransformerGen" and cfg.TRAIN.lr_G > 0.0:
-                    lr = cfg.TRAIN.lr_G
-                elif net == "Discriminator" and cfg.TRAIN.lr_D > 0.0:
-                    lr = cfg.TRAIN.lr_D
-                elif net == "ContentEncoder" and cfg.TRAIN.lr_CE > 0.0:
-                    lr = cfg.TRAIN.lr_CE
-                else:
-                    lr = cfg.TRAIN.lr
-                parameters = self._set_weight_decay(self.model[net], skip, skip_keywords)                    
-                self.optimizer[net] = torch.optim.Adam(
-                    params=parameters,
-                    lr=lr,
+                if net == "MappingNetwork":
+                    self.optimizer[net] = torch.optim.AdamW(
+                    params=self._set_weight_decay(self.model[net], skip, skip_keywords)  ,
+                    eps=cfg.TRAIN.optim_eps,
+                    lr=cfg.TRAIN.lr_MN,
                     betas=cfg.TRAIN.optim_beta,
                     weight_decay=cfg.TRAIN.weight_decay,
                 )
+                elif net == "StyleEncoder":
+                    self.optimizer[net] = torch.optim.AdamW(
+                        params=self._set_weight_decay(self.model[net], skip, skip_keywords), 
+                        eps=cfg.TRAIN.optim_eps,
+                        lr=cfg.TRAIN.lr_SE,
+                        betas=cfg.TRAIN.optim_beta,
+                        weight_decay=cfg.TRAIN.weight_decay
+                    )
+                elif net == "Discriminator":
+                    self.optimizer[net] = torch.optim.AdamW(
+                        params=self._set_weight_decay(self.model[net], skip, skip_keywords), 
+                        eps=cfg.TRAIN.optim_eps,
+                        lr=cfg.TRAIN.base_lr,
+                        betas=cfg.TRAIN.optim_beta,
+                        weight_decay=cfg.TRAIN.weight_decay
+                    )
+                    
+                else:
+                    parameters += self._set_weight_decay(self.model[net], skip, skip_keywords)    
+                                    
+            self.optimizer['Generator'] = torch.optim.AdamW(
+                params=parameters,
+                eps=cfg.TRAIN.optim_eps,
+                lr=cfg.TRAIN.base_lr,
+                betas=cfg.TRAIN.optim_beta,
+                weight_decay=cfg.TRAIN.weight_decay,
+            )
             self.ckptios = [
                 CheckpointIO(
                     ospj(cfg.DIR, cfg.MODEL.name, "ep_{}_model.ckpt"),
@@ -128,10 +156,18 @@ class StarFormer(nn.Module):
 
           
 
-    def train(self, loader, visualizer):
+    def train(self, loader, visualizer, lr_scheduler=None):
         cfg = self.cfg
-        device = self.device
-        model = self.model
+        model = Munch()
+        if cfg.TRAIN.distributed:     
+            for k, m in self.model.items():
+                if "MLPHead" not in k:
+                    model[k] = m.module
+                else:
+                    model[k] = m
+                    
+        # else:
+        #     logging.info(f"===== not distributed =====")
         model_ema = self.model_ema
         optimizer = self.optimizer
         criterions = self.criterions
@@ -140,9 +176,11 @@ class StarFormer(nn.Module):
             m.train()
 
         # fetch random validation images for debugging
-        input_provider = TrainProvider(loader, cfg.MODEL.latent_dim, "train")
         # fetcher_val = InputFetcher(loaders.val, None, cfg.latent_dim, 'val')
         # inputs_val = next(fetcher_val)
+        
+        # create data loader        
+        input_provider = TrainProvider(loader, cfg.MODEL.latent_dim, "train")
 
         # resume training if necessary
         if cfg.TRAIN.start_epoch > 0:
@@ -151,7 +189,7 @@ class StarFormer(nn.Module):
         # remember the initial value of ds weight
         initial_lambda_ds = cfg.TRAIN.lambda_StyleDiv
 
-        box_feature = torch.empty(1).to(device)
+        box_feature = torch.empty(1).to(self.device)
 
         logging.info("===== Start Training =====")
         logging.info(
@@ -162,12 +200,13 @@ class StarFormer(nn.Module):
         )
 
         for epoch in range(cfg.TRAIN.start_epoch, cfg.TRAIN.end_epoch):
-            visualizer.reset()
-            iter_date_time = time.time()
+            if dist.get_rank() == 0:
+                visualizer.reset()
+                iter_date_time = time.time()
 
             logging.info("===== Training progress: Epoch {} =====".format(epoch + 1))
 
-            box_feature = torch.empty(1).to(device)
+            box_feature = torch.empty(1).to(self.device)
             for i in range(0, cfg.TRAIN.epoch_iters // cfg.TRAIN.batch_size_per_gpu):
                 # logging.info(f"++++ Getting input data")
                 inputs, refs = next(input_provider)
@@ -202,16 +241,17 @@ class StarFormer(nn.Module):
                     ):
                         features, box_feature = features[:-1], features[-1]
                     if cfg.TRAIN.w_NCE != 0.0:
-                        model.MLPHead.module.create_mlp(feats=features, device=device)
+                        self.model.MLPHead.create_mlp(feats=features, device=self.device)
                     if cfg.TRAIN.w_Instance_NCE != 0.0 and cfg.TRAIN.n_bbox > 0:
-                        model.MLPHeadInst.module.create_mlp([box_feature], device)
-                    for key, val in model.items():
+                        self.model.MLPHeadInst.create_mlp([box_feature], self.device)
+                    for key, val in self.model.items():
                         if "MLPHead" in key:
                             logging.info(f">> Initializing {key}")
                             # model[key] = nn.DataParallel(val)
                             parameter_F += list(val.parameters())
-                    optimizer.MLPHead = torch.optim.Adam(
-                        parameter_F, lr=float(cfg.TRAIN.lr)
+                            val = DDP(val, device_ids=[self.local_rank], output_device=self.local_rank, broadcast_buffers=False)
+                    optimizer.MLPHead = torch.optim.AdamW(
+                        parameter_F, lr=float(cfg.TRAIN.base_lr)
                     )
 
 
@@ -272,14 +312,9 @@ class StarFormer(nn.Module):
                 self._reset_grad()
                 G_loss.backward()
 
-                optimizer.ContentEncoder.step()
-                optimizer.TransformerGen.step()
-                optimizer.TransformerEnc.step()
-                optimizer.MLPAdain.step()
+                optimizer.Generator.step()
                 optimizer.MappingNetwork.step()
                 optimizer.StyleEncoder.step()
-                if cfg.TRAIN.w_NCE > 0.0:
-                    optimizer.MLPHead.step()
 
                 # ---------------------------------------------------------
                 # generate image from reference image
@@ -347,14 +382,11 @@ class StarFormer(nn.Module):
                 self._reset_grad()
                 G_loss.backward()
 
-                optimizer.ContentEncoder.step()
-                optimizer.TransformerGen.step()
-                optimizer.TransformerEnc.step()
-                optimizer.MLPAdain.step()
-                optimizer.MappingNetwork.step()
-                optimizer.StyleEncoder.step()
-                if cfg.TRAIN.w_NCE > 0.0:
-                    optimizer.MLPHead.step()
+                optimizer.Generator.step()
+                # In StarGAN-V2, the mapping network and the StyleEncoder are not updated when generating from reference image
+                # optimizer.MappingNetwork.step()
+                # optimizer.StyleEncoder.step()
+
 
 
                 # compute moving average of network parameters
@@ -369,6 +401,11 @@ class StarFormer(nn.Module):
                 losses.G_lat = G_losses_lat
                 losses.D_ref = D_losses_ref
                 losses.G_ref = G_losses_ref
+                
+                total_iters = epoch * cfg.TRAIN.epoch_iters + i                
+                
+                if lr_scheduler:
+                    lr_scheduler.step_update((epoch * cfg.TRAIN.epoch_iters // cfg.TRAIN.batch_size_per_gpu + i))
 
                 # decay weight for diversity sensitive loss
                 # logging.info(f"++++ Decaying weight for diversity sensitive loss")
@@ -377,89 +414,89 @@ class StarFormer(nn.Module):
                         initial_lambda_ds / cfg.TRAIN.w_StyleDiv_iter
                     )
 
-                total_iters = epoch * cfg.TRAIN.epoch_iters + i
+                if dist.get_rank() == 0: 
                 # logging.info(f"++++ Generating output")
                 # print info to visdom
-                if cfg.VISUAL.visdom:
-                    if (i % cfg.VISUAL.display_losses_iter) == 0:
-                        visualizer.plot_current_losses(
-                            epoch, float(i) / len(loader), losses=losses
+                    if cfg.VISUAL.visdom:
+                        if (i % cfg.VISUAL.display_losses_iter) == 0:
+                            visualizer.plot_current_losses(
+                                epoch, float(i) / len(loader), losses=losses
+                            )
+                        if (i % cfg.VISUAL.display_sample_iter) == 0:
+                            current_visuals = {
+                                "input_img": inputs.img_src,
+                                "generated_img_lat": fake_img_lat,
+                                "reference_img": refs.img_ref,
+                                "generated_img_ref": fake_img_ref,
+                            }
+                            current_domains = {
+                                "source_domain": inputs.d_src,
+                                "target_domain": refs.d_trg,
+                            }
+                            visualizer.display_current_samples(
+                                current_visuals,
+                                current_domains,
+                                epoch,
+                                (total_iters % cfg.VISUAL.image_save_iter == 0),
+                            )
+                    # print info to console
+                    if (i % cfg.VISUAL.print_losses_iter) == 0:
+                        visualizer.print_current_losses(
+                            epoch + 1, i, losses, time.time() - iter_date_time
                         )
-                    if (i % cfg.VISUAL.display_sample_iter) == 0:
-                        current_visuals = {
-                            "input_img": inputs.img_src,
-                            "generated_img_lat": fake_img_lat,
-                            "reference_img": refs.img_ref,
-                            "generated_img_ref": fake_img_ref,
-                        }
-                        current_domains = {
-                            "source_domain": inputs.d_src,
-                            "target_domain": refs.d_trg,
-                        }
-                        visualizer.display_current_samples(
-                            current_visuals,
-                            current_domains,
-                            epoch,
-                            (total_iters % cfg.VISUAL.image_save_iter == 0),
-                        )
-                # print info to console
-                if (i % cfg.VISUAL.print_losses_iter) == 0:
-                    visualizer.print_current_losses(
-                        epoch + 1, i, losses, time.time() - iter_date_time
-                    )
-                # save intermediate results
-                if (
-                    cfg.VISUAL.save_intermediate
-                    and i % cfg.VISUAL.save_results_freq == 0
-                ):
-                    logging.info(
-                        ">>>> Saving intermediate results to {}/{}".format(
-                            cfg.TRAIN.log_path, cfg.MODEL.name
-                        )
-                    )
-                    domain_imgs = utils.domain_to_image_tensor(
-                        refs.d_trg, cfg.DATASET.target_domain_names, cfg.MODEL.img_size
-                    )
-                    output = torch.stack(
-                        [
-                            inputs.img_src,
-                            domain_imgs,
-                            fake_img_lat,
-                            refs.img_ref,
-                            fake_img_ref,
-                        ],
-                        dim=0,
-                    ).flatten(0, 1)
-                    utils.save_image_from_tensor(
-                        output,
-                        filename="{}/{}/{}_results.jpg".format(
-                            cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)
-                        ),
-                        normalize=cfg.TRAIN.img_norm,
-                    )
-                    if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0:
-                        bbox = (inputs.bbox[0, :, 1:].cpu() * cfg.MODEL.img_size[0]).to(
-                            torch.int
-                        )
-                        img = utils.denormalize(
-                            inputs.img_src[0].unsqueeze(dim=0).cpu()
-                        )
-                        img = (
-                            img.squeeze()
-                            .mul(255)
-                            .add_(0.5)
-                            .clamp_(0, 255)
-                            .to(torch.uint8)
-                        )
-                        img = draw_bounding_boxes(img, bbox).permute(1, 2, 0).numpy()
-                        img = Image.fromarray(img)
-                        img.save(
-                            "{}/{}/source_image_with_bb_{}.jpg".format(
-                                cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)
+                    # save intermediate results
+                    if (
+                        cfg.VISUAL.save_intermediate
+                        and i % cfg.VISUAL.save_results_freq == 0
+                    ):
+                        logging.info(
+                            ">>>> Saving intermediate results to {}/{}".format(
+                                cfg.TRAIN.log_path, cfg.MODEL.name
                             )
                         )
+                        domain_imgs = utils.domain_to_image_tensor(
+                            refs.d_trg, cfg.DATASET.target_domain_names, cfg.MODEL.img_size
+                        )
+                        output = torch.stack(
+                            [
+                                inputs.img_src,
+                                domain_imgs,
+                                fake_img_lat,
+                                refs.img_ref,
+                                fake_img_ref,
+                            ],
+                            dim=0,
+                        ).flatten(0, 1)
+                        utils.save_image_from_tensor(
+                            output,
+                            filename="{}/{}/{}_results.jpg".format(
+                                cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)
+                            ),
+                            normalize=cfg.TRAIN.img_norm,
+                        )
+                        if cfg.TRAIN.w_Instance_NCE > 0.0 and cfg.TRAIN.n_bbox > 0:
+                            bbox = (inputs.bbox[0, :, 1:].cpu() * cfg.MODEL.img_size[0]).to(
+                                torch.int
+                            )
+                            img = utils.denormalize(
+                                inputs.img_src[0].unsqueeze(dim=0).cpu()
+                            )
+                            img = (
+                                img.squeeze()
+                                .mul(255)
+                                .add_(0.5)
+                                .clamp_(0, 255)
+                                .to(torch.uint8)
+                            )
+                            img = draw_bounding_boxes(img, bbox).permute(1, 2, 0).numpy()
+                            img = Image.fromarray(img)
+                            img.save(
+                                "{}/{}/source_image_with_bb_{}.jpg".format(
+                                    cfg.TRAIN.log_path, cfg.MODEL.name, str(total_iters)
+                                )
+                            )
             # Save model & optimizer and example images
-            if epoch > 0 and (epoch % cfg.TRAIN.save_epoch) == 0:
+            if dist.get_rank() == 0 and epoch > 0 and (epoch % cfg.TRAIN.save_epoch) == 0:
                 self._save_checkpoint(epoch=epoch)
 
                 # generate images for debugging
@@ -525,7 +562,6 @@ class StarFormer(nn.Module):
         Returns:
             Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: Tuple containing the generated fake image, fake box, and features.
         """
-        # when performing generation, the input is the content image from the data loader
         feat_content, features = model.ContentEncoder(inputs.img_src, feat_layers)
         style_code_src = model.StyleEncoder(inputs.img_src, inputs.d_src)
         if from_lat:
@@ -533,12 +569,12 @@ class StarFormer(nn.Module):
         else:
             style_code_trg = model.StyleEncoder(refs.img_ref, refs.d_trg)
         utils.apply_adain_params(
-            model=model.TransformerEnc.module.transformer,
+            model=model.TransformerEnc.transformer,
             adain_params=model.MLPAdain(style_code_src),
         )
         if "bbox" in inputs and n_bbox != -1:
             features += [
-                model.TransformerEnc.module.embedding.extract_box_feature(
+                model.TransformerEnc.embedding.extract_box_feature(
                     feat_content, inputs.bbox, n_bbox
                 )
             ]
@@ -552,7 +588,7 @@ class StarFormer(nn.Module):
                 feat_content, sem_labels=inputs.seg, bbox_info=inputs.bbox, n_bbox=n_bbox
             )
         utils.apply_adain_params(
-            model=model.TransformerGen.module, adain_params=model.MLPAdain(style_code_trg)
+            model=model.TransformerGen, adain_params=model.MLPAdain(style_code_trg)
         )
         fake = model.TransformerGen(aggregated_feat)
         fake_box = (
@@ -592,14 +628,14 @@ class StarFormer(nn.Module):
         # use mapping network to generate a style code for the reconstruction
         utils.apply_adain_params(
             model.MLPAdain(style_code_fake),
-            model.TransformerEnc.module.transformer,
+            model.TransformerEnc.transformer,
         )
         # use segmenation map from source also for reconstruction
         aggregated_feat, _, _ = model.TransformerEnc(
             feat_content, sem_embed=True, sem_labels=inputs.seg, n_bbox=-1
         )
         utils.apply_adain_params(
-            model=model.TransformerGen.module, adain_params=model.MLPAdain(style_code_rec)
+            model=model.TransformerGen, adain_params=model.MLPAdain(style_code_rec)
         )
         # aggregated_feat, _, weights = model.TransformerEnc(feat_content, sem_embed=False, n_bbox=-1)
         rec_img = model.TransformerGen(aggregated_feat)
