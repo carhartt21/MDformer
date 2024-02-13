@@ -15,6 +15,8 @@ from torch.utils import data
 from torch.utils.data.sampler import WeightedRandomSampler
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
+import torch.distributed as dist
+
 import time
 import util.custom_transforms as ct
 
@@ -139,9 +141,10 @@ class MultiDomainDataset(data.Dataset):
         try:
             rand_idx = random.randint(0, len(self.trg_domains) - 1)
             trg_domain = self.trg_domains[rand_idx]
-            while torch.argmax(src_domain) == torch.argmax(trg_domain):
-                rand_idx = random.randint(0, len(self.trg_domains) - 1)
-                trg_domain = self.trg_domains[rand_idx]
+            # TODO: test with and without the following lines to include/exclude translation the same domain
+            # while torch.argmax(src_domain) == torch.argmax(trg_domain):
+            #     rand_idx = random.randint(0, len(self.trg_domains) - 1)
+            #     trg_domain = self.trg_domains[rand_idx]
         except IndexError:
             trg_domain = self.trg_domains[rand_idx]
         try:
@@ -305,6 +308,7 @@ def get_train_loader(
     max_n_bbox=4,
     target_domain_names=[],
     seg_threshold=0.8,
+    distributed=False,
 ):
     logging.info("===== Preparing DataLoader =====")
 
@@ -319,14 +323,8 @@ def get_train_loader(
         mean = [1.0, 1.0, 1.0]
         std = [0.0, 0.0, 0.0]
 
-    transform = transforms.Compose(
-        [
-            transforms.RandomResizedCrop(img_size, scale=(1.0, 2.0)),
-            transforms.RandomHorizontalFlip(p=prob),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=mean, std=std),
-        ]
-    )
+    num_tasks = dist.get_world_size()
+    global_rank = dist.get_rank()
 
     transform_custom = transforms.Compose(
         [
@@ -339,22 +337,35 @@ def get_train_loader(
             # ct.SegMaskToPatches(8, seg_threshold),
         ]
     )
-    dataset = MultiDomainDataset(
+    dataset_train = MultiDomainDataset(
         train_list=train_list,
         ref_list=ref_list,
         transform=transform_custom,
         target_domain_names=target_domain_names,
         input_size=img_size,
     )
-    return data.DataLoader(
-        dataset=dataset,
-        batch_size=batch_size,
-        shuffle=True,  # use shuffle or sample
-        #    sampler=sampler,
-        num_workers=num_workers,
-        pin_memory=True,
-        drop_last=True,
-    )
+    if distributed:
+        sampler_train = torch.utils.data.DistributedSampler(
+            dataset_train, num_replicas=num_tasks, rank=global_rank, shuffle=True
+        )
+    
+        return data.DataLoader(
+            dataset=dataset_train,
+            batch_size=batch_size,
+            sampler=sampler_train,
+            num_workers=num_workers,
+            pin_memory=True,
+            drop_last=True,
+        )
+    else:
+        return data.DataLoader(
+            dataset=dataset_train,
+            batch_size=batch_size,
+            shuffle=True,
+            num_workers=num_workers,
+            pin_memory=True,
+            drop_last=True,
+        )
 
 
 def get_ref_loader(
@@ -440,6 +451,9 @@ def get_test_loader(
         mean = [1.0, 1.0, 1.0]
         std = [0.0, 0.0, 0.0]
 
+    num_tasks = dist.get_world_size()
+    global_rank = dist.get_rank()
+
     transform_custom = transforms.Compose(
         [
             ct.RandomScale(img_size),
@@ -453,10 +467,16 @@ def get_test_loader(
     dataset = TestDataset(
         test_dir=test_dir, transform=transform_custom, input_size=img_size
     )
+    
+    sampler_ref = torch.utils.data.DistributedSampler(
+        dataset, num_replicas=num_tasks, rank=global_rank, shuffle=True
+    )
+    
     return data.DataLoader(
         dataset=dataset,
         batch_size=batch_size,
-        shuffle=shuffle,
+        sampler=sampler_ref, 
+        # shuffle=shuffle,
         num_workers=num_workers,
         pin_memory=True,
         drop_last=drop_last,
@@ -615,7 +635,7 @@ class TestProvider:
             raise NotImplementedError
         return Munch(
             {
-                k: v.to(self.device) if k is not "fname" else [v]
+                k: v.to(self.device) if k != "fname" else [v]
                 for k, v in inputs.items()
             }
         )

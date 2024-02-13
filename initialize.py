@@ -10,8 +10,6 @@ import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.parallel
 from munch import Munch
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data.distributed import DistributedSampler
 
 import models
 from models import blocks
@@ -39,7 +37,7 @@ def set_seed(seed=42):
     return
 
 
-def build_model(cfg):
+def build_model(cfg, device):
     """
     Build the model for training.
 
@@ -53,12 +51,7 @@ def build_model(cfg):
         tuple: A tuple containing the model_G, parameter_G, model_D, parameter_D, and model_F.
     """
     logging.info("===== Building the Model =====")
-    # if distributed:
-    #     logging.info(">> Distributed Training: {}".format(distributed))
-    #     torch.cuda.set_device(device)
-    #     dist.init_process_group(backend='nccl', init_method='env://')
-    #     logging.info(">>>> Device : {}".format(device))
-    #     # logging.info(f"model_cfg.gpu_ids : {model_cfg.gpu_ids}")
+
     model_cfg = cfg.MODEL
     num_domains = len(cfg.DATASET.target_domain_names)
 
@@ -66,65 +59,52 @@ def build_model(cfg):
     # logging.info("domain_idxs : {}".format(domain_idxs))
     # TODO: add test mode
     logging.info(">> Building the ContentEncoder")
-    ContentEncoder = nn.DataParallel(
-        models.ContentEncoderV2(
-            input_channels=model_cfg.in_channels,
-            ngf=model_cfg.n_generator_filters,
-            n_downsampling=model_cfg.n_downsampling,
-        )
-    )
+    ContentEncoder = models.ContentEncoderV2(
+        input_channels=model_cfg.in_channels,
+        ngf=model_cfg.n_generator_filters,
+        n_downsampling=model_cfg.n_downsampling,
+    ).to(device)
     logging.info(">> Building the StyleEncoder")
-    StyleEncoder = nn.DataParallel(
-        models.StyleEncoder(
-            input_channels=model_cfg.in_channels,
-            n_generator_filters=model_cfg.n_generator_filters,
-            style_dim=model_cfg.style_dim,
-            num_domains=num_domains,
-        )
-    )
+    StyleEncoder = models.StyleEncoder(
+        input_channels=model_cfg.in_channels,
+        n_generator_filters=model_cfg.n_generator_filters,
+        style_dim=model_cfg.style_dim,
+        num_domains=num_domains,
+    ).to(device)
     logging.info(">> Building the Transformer Encoder")
-    TransformerEncoder = nn.DataParallel(
-        models.Transformer(model_cfg=model_cfg, vis=False)
-    )
+    TransformerEncoder = models.Transformer(model_cfg=model_cfg, vis=False).to(device)
+
     logging.info(">> Building the Transformer Generator")
-    TransformerGenerator = nn.DataParallel(
-        models.swin_generator.SwinGenerator(model_cfg=model_cfg)
-    )
+    TransformerGenerator = models.swin_generator.SwinGenerator(model_cfg=model_cfg).to(device)
+    
     logging.info(">> Building the MLP Blocks")
-    MLPAdain = nn.DataParallel(
-        blocks.MLP(
-            input_dim=model_cfg.style_dim,
-            output_dim=utils.get_num_adain_params(
-                TransformerEncoder.module.transformer
-            ),
-        )
-    )
+    MLPAdain = blocks.MLP(
+        input_dim=model_cfg.style_dim,
+        output_dim=utils.get_num_adain_params(TransformerEncoder.transformer),
+    ).to(device)
 
     logging.info(">> Building the Mapping Network")
-    MappingNetwork = nn.DataParallel(
-        models.MappingNetwork(
-            num_domains=num_domains,
-            latent_dim=model_cfg.latent_dim,
-            style_dim=model_cfg.style_dim,
-            hidden_dim=model_cfg.hidden_dim,
-        )
-    )
+    MappingNetwork = models.MappingNetwork(
+        num_domains=num_domains,
+        latent_dim=model_cfg.latent_dim,
+        style_dim=model_cfg.style_dim,
+        hidden_dim=model_cfg.hidden_dim,
+    ).to(device)
 
     logging.info(">> Building the Discriminator")
-    Discriminator = nn.DataParallel(
-        models.NLayerDiscriminator(
-            input_channels=model_cfg.in_channels,
-            ndf=model_cfg.n_discriminator_filters,
-            n_layers=3,
-            num_domains=num_domains,
-        )
-    )
+    Discriminator = models.NLayerDiscriminator(
+        input_channels=model_cfg.in_channels,
+        ndf=model_cfg.n_discriminator_filters,
+        n_layers=3,
+        num_domains=num_domains,
+    ).to(device)
+
     logging.info(">> Building the MLP Heads")
     if cfg.TRAIN.w_NCE > 0.0:
-        MLPHead = nn.DataParallel(models.MLPHead())
-        MLPHead2 = nn.DataParallel(models.NPMLPHead())
+        MLPHead = models.MLPHead().to(device)
+        MLPHead2 = models.NPMLPHead().to(device)
     if cfg.TRAIN.w_Instance_NCE > 0.0:
-        MLPHeadInst = nn.DataParallel(models.MLPHead())
+        MLPHeadInst = models.MLPHead().to(device)
 
     ContentEncoder_ema = copy.deepcopy(ContentEncoder)
     StyleEncoder_ema = copy.deepcopy(StyleEncoder)
@@ -134,15 +114,13 @@ def build_model(cfg):
         ContentEncoder=ContentEncoder,
         StyleEncoder=StyleEncoder,
         TransformerEnc=TransformerEncoder,
-        MLPAdain=MLPAdain,        
+        MLPAdain=MLPAdain,
         TransformerGen=TransformerGenerator,
         MappingNetwork=MappingNetwork,
         Discriminator=Discriminator,
     )
-
     if cfg.TRAIN.w_NCE > 0.0:
         model.MLPHead = MLPHead
-        # model.MLPHead2 = MLPHead2
     if cfg.TRAIN.w_Instance_NCE > 0.0:
         model.MLPHeadInst = MLPHeadInst
 
