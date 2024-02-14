@@ -6,6 +6,8 @@ import time
 import utils
 from util import html
 from subprocess import Popen, PIPE
+import logging
+import visdom
 
 if sys.version_info[0] == 2:
     VisdomExceptionBase = Exception
@@ -53,7 +55,7 @@ class Visualizer():
     It uses 'visdom' for display, and 'dominate' (wrapped in 'HTML') for creating HTML files with images.
     """
 
-    def __init__(self, name, log_path, opt):
+    def __init__(self, name, log_path, opt, target_domain_names=[]):
         """Initialize the Visualizer class
 
         Parameters:
@@ -63,25 +65,26 @@ class Visualizer():
         Step 3: create an HTML object for saving HTML filters
         Step 4: create a logging file to store training losses
         """
+        logging.info('===== Visualizer =====')
         self.opt = opt  # cache the option
 
         if opt.display_id < 0:
             self.display_id = np.random.randint(100000) * 10  # just a random display id
         else:
             self.display_id = opt.display_id
-        self.use_html = not opt.no_html
+        self.use_html = opt.save_intermediate
         self.win_size = opt.display_winsize
         self.name = name
-        self.port = opt.display_port
+        self.port = opt.port
         self.saved = False
-        self.enabled = opt.enabled
-        
+        self.enabled = opt.visdom
+        self.target_domain_names = target_domain_names
+
         if self.enabled and self.display_id > 0:  # connect to a visdom server given <display_port> and <display_server>
-            import visdom
             self.plot_data = {}
             self.ncols = opt.display_ncols
             if "tensorboard_base_url" not in os.environ:
-                self.vis = visdom.Visdom(server=opt.display_server, port=opt.display_port, env=opt.display_env)
+                self.vis = visdom.Visdom(server=opt.server, port=opt.port, env=opt.env)
             else:
                 self.vis = visdom.Visdom(port=2004,
                                          base_url=os.environ['tensorboard_base_url'] + '/visdom')
@@ -97,7 +100,7 @@ class Visualizer():
         self.log_name = os.path.join(log_path, name, 'loss_log.txt')
         with open(self.log_name, "a") as log_file:
             now = time.strftime("%c")
-            log_file.write('================ Training Loss (%s) ================\n' % now)
+            log_file.write('========== Training Loss (%s) ==========\n' % now)
 
     def reset(self):
         """Reset the self.saved status"""
@@ -110,50 +113,45 @@ class Visualizer():
         print('Command: %s' % cmd)
         Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
 
-    def display_current_results(self, visuals, epoch, save_result):
+    def display_current_samples(self, visuals, d_labels, epoch, save_result):
         """Display current results on visdom; save current results to an HTML file.
 
         Parameters:
             visuals (OrderedDict) - - dictionary of images to display or save
+            labels (OrderedDict)  - - dictionary of labels associated with each image
             epoch (int) - - the current epoch
             save_result (bool) - - if save the current results to an HTML file
         """
         if self.display_id > 0:  # show images in the browser using visdom
             ncols = self.ncols
+            caption = ''
+            title = ''
             if ncols > 0:        # show all the images in one visdom panel
                 ncols = min(ncols, len(visuals))
                 h, w = next(iter(visuals.values())).shape[:2]
-                table_css = """<style>
-                        table {border-collapse: separate; border-spacing: 4px; white-space: nowrap; text-align: center}
-                        table td {width: % dpx; height: % dpx; padding: 4px; outline: 4px solid black}
-                        </style>""" % (w, h)  # create a table css
+                # table_css = """<style>
+                #         table {border-collapse: separate; border-spacing: 4px; white-space: nowrap; text-align: center}
+                #         table td {width: % dpx; height: % dpx; padding: 4px; outline: 4px solid black}
+                #         </style>""" % (w, h)  # create a table css
                 # create a table of images.
-                title = self.name
-                label_html = ''
-                label_html_row = ''
                 images = []
                 idx = 0
                 for label, image in visuals.items():
                     image_numpy = utils.tensor2im(image)
-                    label_html_row += '<td>%s</td>' % label
                     images.append(image_numpy.transpose([2, 0, 1]))
                     idx += 1
-                    if idx % ncols == 0:
-                        label_html += '<tr>%s</tr>' % label_html_row
-                        label_html_row = ''
+                    title += label + ' | '
                 white_image = np.ones_like(image_numpy.transpose([2, 0, 1])) * 255
                 while idx % ncols != 0:
                     images.append(white_image)
-                    label_html_row += '<td></td>'
                     idx += 1
-                if label_html_row != '':
-                    label_html += '<tr>%s</tr>' % label_html_row
+                for key, value in d_labels.items():
+                    caption += key + ': ' + utils.onehot_to_domain(value[0], self.target_domain_names) + ' '
+                # opts = dict(title= title)
+
                 try:
                     self.vis.images(images, ncols, 2, self.display_id + 1,
-                                    None, dict(title=title + ' images'))
-                    label_html = '<table>%s</table>' % label_html
-                    self.vis.text(table_css + label_html, win=self.display_id + 2,
-                                  opts=dict(title=title + ' labels'))
+                                    None, opts=dict(caption=caption, title=title))
                 except VisdomExceptionBase:
                     self.create_visdom_connections()
 
@@ -205,17 +203,22 @@ class Visualizer():
         """
         if len(losses) == 0:
             return
+        _losses = {}
 
-        plot_name = '_'.join(list(losses.keys()))
+        for l, m in losses.items():
+            for k, v in m.items():
+                _losses[f'{l} - {k}'] = v.cpu().detach()
+
+        plot_name = '_'.join(list(_losses.keys()))
 
         if plot_name not in self.plot_data:
-            self.plot_data[plot_name] = {'X': [], 'Y': [], 'legend': list(losses.keys())}
+            self.plot_data[plot_name] = {'X': [], 'Y': [], 'legend': list(_losses.keys())}
 
         plot_data = self.plot_data[plot_name]
         plot_id = list(self.plot_data.keys()).index(plot_name)
 
         plot_data['X'].append(epoch + counter_ratio)
-        plot_data['Y'].append([losses[k] for k in plot_data['legend']])
+        plot_data['Y'].append([_losses[k] for k in plot_data['legend']])
         try:
             self.vis.line(
                 X=np.stack([np.array(plot_data['X'])] * len(plot_data['legend']), 1),
@@ -225,12 +228,12 @@ class Visualizer():
                     'legend': plot_data['legend'],
                     'xlabel': 'epoch',
                     'ylabel': 'loss'},
-                win=self.display_id - plot_id)
+                win=self.display_id)
         except VisdomExceptionBase:
             self.create_visdom_connections()
 
     # losses: same format as |losses| of plot_current_losses
-    def print_current_losses(self, epoch, iters, losses, t_comp, t_data):
+    def print_current_losses(self, epoch, iters, losses, t_comp):
         """print current losses on console; also save the losses to the disk
 
         Parameters:
@@ -238,12 +241,14 @@ class Visualizer():
             iters (int) -- current training iteration during this epoch (reset to 0 at the end of every epoch)
             losses (OrderedDict) -- training losses stored in the format of (name, float) pairs
             t_comp (float) -- computational time per data point (normalized by batch_size)
-            t_data (float) -- data loading time per data point (normalized by batch_size)
         """
-        message = '(epoch: %d, iters: %d, time: %.3f, data: %.3f) ' % (epoch, iters, t_comp, t_data)
-        for k, v in losses.items():
-            message += '%s: %.3f ' % (k, v)
+        message = f'===== {self.name} ===== \n'
+        message += f'>> Epoch: {epoch}, iters: {iters}, time: {t_comp:.2f}\n'
+        for l, m in losses.items():
+            message += f'>>>> == {l} == \n'
+            for k, v in m.items():
+                message += f'>>>> {k}: {v:.3f} \n'
 
-        print(message)  # print the message
+        logging.info('{}'.format(message))  # print the message
         with open(self.log_name, "a") as log_file:
             log_file.write('%s\n' % message)  # save the message

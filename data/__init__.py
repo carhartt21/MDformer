@@ -13,7 +13,6 @@ See our template dataset class 'template_dataset.py' for more details.
 import importlib
 import torch.utils.data
 from data.base_dataset import BaseDataset
-from dotmap import DotMap
 
 
 def find_dataset_using_name(dataset_name):
@@ -70,15 +69,15 @@ class CustomDatasetDataLoader():
         Step 2: create a multi-threaded data loader.
         """
         self.cfg = cfg
-        dataset_class = find_dataset_using_name(self.cfg.data.dataset_mode)
-        self.dataset = dataset_class(self.cfg.data)
-        # print("dataset [%s] was created" % type(self.dataset).__name__)
+        dataset_class = find_dataset_using_name(self.cfg.DATASET.dataset_mode)
+        self.dataset = dataset_class(self.cfg)
+        print("Created {} data set".format(type(self.dataset).__name__))
         self.dataloader = torch.utils.data.DataLoader(
             self.dataset,
-            batch_size=cfg.batch_size,
-            shuffle=not cfg.serial_batches,
-            num_workers=int(cfg.num_workers),
-            drop_last=True if cfg.isTrain else False,
+            batch_size=cfg.TRAIN.batch_size_per_gpu,
+            shuffle=not 'serial_batches' in cfg.TRAIN,
+            num_workers=int(cfg.TRAIN.num_workers),
+            drop_last=True,
         )
 
     def set_epoch(self, epoch):
@@ -89,11 +88,11 @@ class CustomDatasetDataLoader():
 
     def __len__(self):
         """Return the number of data in the dataset"""
-        return min(len(self.dataset), self.cfg.data.max_dataset_size)
+        return min(len(self.dataset), self.cfg.DATASET.max_dataset_size)
 
     def __iter__(self):
         """Return a batch of data"""
         for i, data in enumerate(self.dataloader):
-            if i * self.cfg.batch_size >= self.cfg.data.max_dataset_size:
+            if i * self.cfg.TRAIN.batch_size_per_gpu >= self.cfg.DATASET.max_dataset_size:
                 break
             yield data

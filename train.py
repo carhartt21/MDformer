@@ -1,159 +1,143 @@
 import os
-import pdb
-import time
+
 import argparse
+import logging
+import builtins
+from datetime import timedelta
 
 import yaml
-from dotmap import DotMap
+
+# from dotmap import DotMap
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from tqdm import tqdm
+from torch.nn.parallel import DistributedDataParallel as DDP
+# from torch.distributed import get_rank
 
-import utils
+from model import StarFormer
+
 import initialize
-import loss
 from visualizer import Visualizer
-from collections import OrderedDict
-from data import create_dataset
 
-TRAIN = 1
-EVAL  = 0
+# from collections import OrderedDict
+from util.config import cfg
+from data_loader import get_train_loader
+from utils import synchronize, get_rank
 
-I2I = 1
-RECON = 0 
+os.environ['MASTER_ADDR'] = 'localhost'
+os.environ['MASTER_PORT'] = '12355'
 
-parser = argparse.ArgumentParser(description='arguments yaml load')
-parser.add_argument("--conf",
-                    type=str,
-                    help="configuration file path",
-                    default="./config/base_train.yaml")
-
-args = parser.parse_args()
-
+# Configure logging
+logging.basicConfig(
+    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger()
 
 if __name__ == "__main__":
-    with open(args.conf, 'r') as f:
-        # configuration
-        conf =  yaml.load(f, Loader=yaml.FullLoader)
-        train_cfg = DotMap(conf['Train'])
-        device = torch.device("cuda" if train_cfg.use_cuda else "cpu")
+    parser = argparse.ArgumentParser(
+        description="PyTorch Multi-Domain Image-to-Image Translation using Transformers"
+    )
+    parser.add_argument(
+        "--cfg",
+        default="config/config.yaml",
+        metavar="FILE",
+        help="path to config file",
+        type=str,
+    )
+    parser.add_argument("--gpu", default=0, help="gpu to use")
+    
+    parser.add_argument(
+        "opts",
+        help="Modify config options using the command-line",
+        default=None,
+        nargs=argparse.REMAINDER,
+    )
+    
+    args = parser.parse_args()
 
-        # seed 
-        initialize.seed_everything(train_cfg.seed)
-
-        # data loader
-        data_loader = create_dataset(train_cfg)  # create a dataset given opt.dataset_mode and other options
-
-        # data_loader = initialize.data_loader(train_cfg.data, train_cfg.batch_size, train_cfg.num_workers, True)
+    cfg.merge_from_file(args.cfg)
+    cfg.merge_from_list(args.opts)
+    
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    
+    if cfg.TRAIN.distributed:
+        torch.cuda.set_device(local_rank)
+        torch.distributed.init_process_group(backend="nccl", init_method="env://", timeout=timedelta(0, 18000))
+        synchronize()
         
-        #model_load
-        model_G, parameter_G, model_D, parameter_D, model_F = initialize.baseline_model_load(train_cfg.model, device)
+    if cfg.TRAIN.distributed and get_rank() != 0:
+        def print_pass(*args):
+            pass
+        builtins.print = print_pass
 
-        # optimizer & scheduler
-        optimizer_G = optim.Adam(parameter_G, float(train_cfg.lr),betas=(train_cfg.beta1, train_cfg.beta2))
-        optimizer_D = optim.Adam(parameter_D, float(train_cfg.lr),betas=(train_cfg.beta1, train_cfg.beta2))
-
-        if train_cfg.model.load_optim:
-            print('Loading Adam optimizer')
-            # optim_load_dict = torch.load(os.path.join(train_cfg.model.load_weight_path,'adam.pth'), map_location=device)
-            # optim_load_dict = torch.load(os.path.join(train_cfg.model.weight_path,'adam.pth'), map_location=device)
-            optim_load_dict_g = torch.load(os.path.join(train_cfg.model.weight_path,'adam_G.pth'), map_location=device)
-            optim_load_dict_d = torch.load(os.path.join(train_cfg.model.weight_path,'adam_G.pth'), map_location=device)
-            optim_load_dict_f = torch.load(os.path.join(train_cfg.model.weight_path,'adam_G.pth'), map_location=device)
-            optimizer_G.load_state_dict(optim_load_dict_g)
-            optimizer_D.load_state_dict(optim_load_dict_d)
+    if get_rank() == 0:
+        logger.info("===== Loaded configuration =====")
+        logger.info(f">> Source: {args.cfg}")
+        logger.info(yaml.dump(cfg))        
+        log_path_model = os.path.join(cfg.TRAIN.log_path, cfg.MODEL.name)
+        if not os.path.isdir(log_path_model):
+            os.makedirs(log_path_model)
+        with open(os.path.join(log_path_model, f"config_{cfg.MODEL.name}.yaml"), "w") as f:
+            f.write(f"{cfg}")
             
-            # optimizer_F.load_state_dict(optim_load_dict)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             
-        # if train_cfg.lr_scheduler:
-        #     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, train_cfg.scheduler_step_size, 0.1)
+    # seed
+    initialize.set_seed(cfg.TRAIN.seed + get_rank())
 
-        criterions = initialize.criterion_set(train_cfg, device)
+    # data loader
+    num_domains = len(cfg.DATASET.target_domain_names)
 
-        # set visualize (visdom)
-        # if train_cfg.visualize.enabled:
-        visualizer = Visualizer(train_cfg.model_name, train_cfg.log_path, train_cfg.visualize)   # create a visualizer that display/save images and plots
+    train_list = []
+    for td in cfg.DATASET.target_domain_names:
+        if os.path.isdir(os.path.join(cfg.DATASET.train_dir, td)):
+            train_list.append(os.path.join(cfg.DATASET.train_dir, td))
+        else:
+            logger.warning(
+                f"{os.path.join(cfg.DATASET.train_dir, td)} is not a directory"
+            )
+    assert (
+        len(train_list) > 0
+    ), f"Target domains {cfg.DATASET.target_domain_names} not found in train directory {cfg.DATASET.train_dir}"
+    if len(train_list) < num_domains:
+        logger.warning(
+            f"Number of matching folders in the directory ({len(train_list)}) is less than number of domains {num_domains}."
+        )
 
-        print('Start Training')
-        for epoch in range(train_cfg.start_epoch, train_cfg.end_epoch):
-            utils.model_mode(model_G,TRAIN)
-            utils.model_mode(model_D,TRAIN)
-            utils.model_mode(model_F,TRAIN)
-            visualizer.reset() # reset the visualizer: make sure it saves the results to HTML at least once every epoch
-            iter_date_time = time.time()
+    ref_list = []
+    for td in cfg.DATASET.target_domain_names:
+        if os.path.isdir(os.path.join(cfg.DATASET.ref_dir, td)):
+            ref_list.append(os.path.join(cfg.DATASET.ref_dir, td))
+        else:
+            logger.warning(
+                f"{os.path.join(cfg.DATASET.ref_dir, td)} is not a directory"
+            )
+    assert (
+        len(ref_list) > 0
+    ), f"Target domains {cfg.DATASET.target_domain_names} not found in reference directory {cfg.DATASET.ref_dir}"
+    if len(ref_list) < num_domains:
+        logger.warning(
+            f"Number of matching folders in the directory {len(ref_list)} is less than number of domains {num_domains}."
+        )
 
-            dataset_size = len(data_loader)
-            print('#training images = {}'.format(dataset_size))
+    data_loader = get_train_loader(
+        img_size=cfg.MODEL.img_size,
+        batch_size=cfg.TRAIN.batch_size_per_gpu,
+        train_list=train_list,
+        ref_list=ref_list,
+        target_domain_names=cfg.DATASET.target_domain_names,
+        normalize=cfg.TRAIN.img_norm,
+        num_workers=cfg.TRAIN.num_workers,
+        max_n_bbox=cfg.TRAIN.n_bbox,
+        seg_threshold=0.8,  
+        distributed=cfg.TRAIN.distributed,
+    )
 
-            print(f'Training progress(ep:{epoch+1})')
+    if get_rank() == 0:
+        visualizer = Visualizer(
+            cfg.MODEL.name, cfg.TRAIN.log_path, cfg.VISUAL, cfg.DATASET.target_domain_names
+        )   
+    else:
+        visualizer = None
 
-            for i, inputs in enumerate(tqdm(data_loader)):
-                box_feature = torch.empty(1).to(device)  
-                # print('inputs  {} {}'.format(len(inputs), inputs))
-                # inputs = inputs[0]
-                inputs['Source'] = inputs['Source'].to(device)
-                inputs['Target'] = inputs['Target'].to(device)
-
-                # Model Forward
-                fake_img, fake_box, features = loss.model_forward(inputs, model_G, train_cfg.data.num_box, I2I, train_cfg.model.feat_layers)
-                recon_img, _, style_code = loss.model_forward(inputs, model_G, train_cfg.data.num_box, RECON)
-                if train_cfg.data.num_box > 0 and len(features) > len(train_cfg.model.feat_layers):
-                    features, box_feature =  features[:-1], features[-1]
-
-                # MLP_initialize
-                if epoch == 0 and i ==0 and (train_cfg.w_NCE != 0.0  or (train_cfg.w_Instance_NCE != 0.0 and train_cfg.data.num_box > 0)):
-                    if train_cfg.w_NCE != 0.0:
-                        model_F['MLP_head'].module.create_mlp(features, device)
-                    if (train_cfg.w_Instance_NCE != 0.0 and train_cfg.data.num_box > 0):
-                        model_F['MLP_head_inst'].create_mlp([box_feature], device)
-
-                    parameter_F = []
-                    for key, val in model_F.items():
-                        model_F[key] = nn.DataParallel(val)
-                        model_F[key].to(device)
-                        model_F[key].train()
-                        parameter_F += list(val.parameters())
-                    optimizer_F = optim.Adam(parameter_F, float(train_cfg.lr))
-
-                #Backward & Optimizer
-                optimize_start_time = time.time() 
-
-                #Discriminator  
-                utils.set_requires_grad(model_D['Discrim'].module, True)
-                optimizer_D.zero_grad()
-                total_D_loss, D_losses = loss.compute_D_loss(inputs, fake_img, model_D, criterions)
-                total_D_loss.backward()
-                optimizer_D.step()
-
-                #Generator                         
-                utils.set_requires_grad(model_D['Discrim'].module, False)
-                optimizer_G.zero_grad()
-                optimizer_F.zero_grad()
-                total_G_loss, G_losses = loss.compute_G_loss(inputs, fake_img, recon_img, style_code, features, box_feature, model_G, model_D, model_F, criterions, train_cfg)
-                total_G_loss.backward()
-                optimizer_G.step()
-                optimizer_F.step()
-
-                #Visualize(visdom)
-                total_iters = epoch * len(data_loader) + (i+1)
-                losses = {};  losses.update(G_losses);  losses.update(D_losses) 
-                if (train_cfg.visualize.enabled):
-                    visualizer.plot_current_losses(epoch, float(i) / len(data_loader), {k: v.item() for k, v in losses.items()})
-                    if (total_iters % train_cfg.display_iter) == 0:
-                        current_visuals = {'real_img':inputs['Source'], 'fake_img':fake_img, 'style_img':inputs['Target'], 'recon_img':recon_img}
-                        visualizer.display_current_results(current_visuals, epoch,  (total_iters % train_cfg.save_img_iter == 0))
-                else:
-                    if (total_iters % train_cfg.visualize.print_freq) == 0: 
-                        visualizer.print_current_losses(epoch, i, losses, time.time() - iter_date_time, optimize_start_time - iter_date_time)   
-                    # Save model & optimizer            
-                if (epoch % train_cfg.display_epoch) == 0:
-                    utils.save_component(train_cfg.log_path, train_cfg.model_name, epoch, model_G, optimizer_G)
-                    utils.save_component(train_cfg.log_path, train_cfg.model_name, epoch, model_D, optimizer_D)
-                    utils.save_component(train_cfg.log_path, train_cfg.model_name, epoch, model_F, optimizer_F)
-
-            # utils.save_color(inputs['A'], 'test/realA', str(epoch))
-            # utils.save_color(inputs['B'], 'test/realB', str(epoch))
-            # utils.save_color(fake_img, 'test/fake', str(epoch))
-            # utils.save_color(recon_img, 'test/recon', str(epoch))
+    model = StarFormer(cfg=cfg, mode="train", local_rank=local_rank, device=device)
+    
+    model.train(data_loader, visualizer=visualizer)

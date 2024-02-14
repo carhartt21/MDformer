@@ -5,11 +5,15 @@ __pycache__/
 
 # C extensions
 *.so
+*.pyc
 
 # Data 
 dataset/
 weights/
 share/
+test_dataset/
+output/
+helper/ref_images/
 
 # Distribution / packaging
 .Python

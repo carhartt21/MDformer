@@ -1,153 +1,158 @@
-import random
+import copy
+import logging
 import os
+import random
+from typing import Any, Dict
 
-import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
 import numpy as np
-from collections import OrderedDict
-# from lib.nn import user_scattered_collate, async_copy_to
+import torch
+import torch.distributed as dist
+import torch.nn as nn
+import torch.nn.parallel
+from munch import Munch
 
-
-from data.single_dataset import SingleDataset
-from data import create_dataset
-# from data import TrainDataset
+import models
+from models import blocks
 import utils
-import networks
 
-def seed_everything(seed=42):
+logging.basicConfig(level=logging.INFO)
+
+
+def set_seed(seed=42):
+    """
+    Set the random seed for reproducibility.
+
+    Args:
+        seed (int): The random seed value. Default is 42.
+    """
     random.seed(seed)
     np.random.seed(seed)
-    os.environ['PYTHONHASHSEED'] = str(seed)
+    os.environ["PYTHONHASHSEED"] = str(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
-    # torch.cuda.manual_seed_all(random_seed) # if use multi-GPU
+    torch.cuda.manual_seed_all(seed)  # if use multi-GPU
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    # print(f"seed : {seed}")
+    logging.info(">> Seed set to: {}".format(seed))
+    return
 
-def baseline_model_load(model_cfg, device):
-    model_G = {}
-    parameter_G = []
-    model_D = {}
-    parameter_D = []
-    model_F = {}
 
-    model_G['ContentEncoder'] = networks.ContentEncoder()
-    model_G['StyleEncoder'] = networks.StyleEncoder()
-    model_G['Transformer'] = networks.Transformer_Aggregator()
-    model_G['MLP_Adain'] = networks.MLP()
-    model_G['Generator'] = networks.Generator()
+def build_model(cfg, device):
+    """
+    Build the model for training.
 
-    model_D['Discrim'] = networks.NLayerDiscriminator()
+    Args:
+        model_cfg (object): The configuration object for the model.
+        device (torch.device): The device to use for training.
+        num_domains (int): The number of domains. Default is 8.
+        distributed (bool): Whether to use distributed training. Default is False.
 
-    model_F['MLP_head'] = networks.MLP_Head()
-    model_F['MLP_head_inst'] = networks.MLP_Head(nc=64)
+    Returns:
+        tuple: A tuple containing the model_G, parameter_G, model_D, parameter_D, and model_F.
+    """
+    logging.info("===== Building the Model =====")
 
-    if model_cfg.load_weight:
-        print("Loading Network weights")
-        for key in model_G.keys():
-            # file = os.path.join(model_cfg.weight_path, f'{key}.pth')
-            file = os.path.join(model_cfg.load_weight_path, f'{key}.pth')
-            if os.path.isfile(file):
-                print(f"Success load {key} weight")
-                model_load_dict = torch.load(file, map_location=device)
-                # breakpoint()
-                keys = model_load_dict.keys()
-                values = model_load_dict.values()
+    model_cfg = cfg.MODEL
+    num_domains = len(cfg.DATASET.target_domain_names)
 
-                new_keys = []
-                for i, mykey in enumerate(keys):
-                    # if i==len(keys)-1:
-                    #     new_keys.append(key)
-                    # else:
-                    new_key = mykey[7:] #REMOVE 'module.'
-                    new_keys.append(new_key)
-                new_dict = OrderedDict(list(zip(new_keys,values)))
-                # breakpoint()
-                model_G[key].load_state_dict(new_dict)
+    # domain_idxs = utils.get_domain_indexes(model_cfg.DATASET.target_domain_names)
+    # logging.info("domain_idxs : {}".format(domain_idxs))
+    # TODO: add test mode
+    logging.info(">> Building the ContentEncoder")
+    ContentEncoder = models.ContentEncoderV2(
+        input_channels=model_cfg.in_channels,
+        ngf=model_cfg.n_generator_filters,
+        n_downsampling=model_cfg.n_downsampling,
+    ).to(device)
+    logging.info(">> Building the StyleEncoder")
+    StyleEncoder = models.StyleEncoder(
+        input_channels=model_cfg.in_channels,
+        n_generator_filters=model_cfg.n_generator_filters,
+        style_dim=model_cfg.style_dim,
+        num_domains=num_domains,
+    ).to(device)
+    logging.info(">> Building the Transformer Encoder")
+    TransformerEncoder = models.Transformer(model_cfg=model_cfg, vis=False).to(device)
 
-                # model_G[key].load_state_dict(model_load_dict)
-            else:
-                print(f"Dose not exist {file}")
-
-        for key in model_D.keys():
-            file = os.path.join(model_cfg.load_weight_path, f'{key}.pth')
-            if os.path.isfile(file):
-                print(f"Success load {key} weight")
-                model_load_dict = torch.load(file, map_location=device)
-                keys = model_load_dict.keys()
-                values = model_load_dict.values()
-
-                new_keys = []
-                for _key in keys:
-                    new_key = _key[7:] #REMOVE 'module.'
-                    new_keys.append(new_key)
-                new_dict = OrderedDict(list(zip(new_keys,values)))
-                # breakpoint()
-                model_D[key].load_state_dict(new_dict)
-                # model_D[key].load_state_dict(model_load_dict)
-            else:
-                print(f"Dose not exist {file}")
-            
-    for key, val in model_G.items():
-        model_G[key] = nn.DataParallel(val)
-        model_G[key].to(device)
-        model_G[key].train()
-        parameter_G += list(val.parameters())
-
-    for key, val in model_D.items():
-        model_D[key] = nn.DataParallel(val)
-        model_D[key].to(device)
-        model_D[key].train()
-        parameter_D += list(val.parameters())
+    logging.info(">> Building the Transformer Generator")
+    TransformerGenerator = models.swin_generator.SwinGenerator(model_cfg=model_cfg).to(device)
     
-    # for key, val in model_F.items()
-    #     model_F[key] = nn.DataParallel(val)
-    #     model_F[key].to(device)
-    #     model_F[key].train()
+    logging.info(">> Building the MLP Blocks")
+    MLPAdain = blocks.MLP(
+        input_dim=model_cfg.style_dim,
+        output_dim=utils.get_num_adain_params(TransformerEncoder.transformer),
+    ).to(device)
 
-    for key, val in model_F.items():
-        model_F[key] = nn.DataParallel(val)
-        model_F[key].to(device)
-        model_F[key].train()
+    logging.info(">> Building the Mapping Network")
+    MappingNetwork = models.MappingNetwork(
+        num_domains=num_domains,
+        latent_dim=model_cfg.latent_dim,
+        style_dim=model_cfg.style_dim,
+        hidden_dim=model_cfg.hidden_dim,
+    ).to(device)
 
-    return model_G, parameter_G, model_D, parameter_D, model_F
+    logging.info(">> Building the Discriminator")
+    Discriminator = models.NLayerDiscriminator(
+        input_channels=model_cfg.in_channels,
+        ndf=model_cfg.n_discriminator_filters,
+        n_layers=3,
+        num_domains=num_domains,
+    ).to(device)
+
+    logging.info(">> Building the MLP Heads")
+    if cfg.TRAIN.w_NCE > 0.0:
+        MLPHead = models.MLPHead().to(device)
+        MLPHead2 = models.NPMLPHead().to(device)
+    if cfg.TRAIN.w_Instance_NCE > 0.0:
+        MLPHeadInst = models.MLPHead().to(device)
+
+    ContentEncoder_ema = copy.deepcopy(ContentEncoder)
+    StyleEncoder_ema = copy.deepcopy(StyleEncoder)
+    MappingNetwork_ema = copy.deepcopy(MappingNetwork)
+
+    model = Munch(
+        ContentEncoder=ContentEncoder,
+        StyleEncoder=StyleEncoder,
+        TransformerEnc=TransformerEncoder,
+        MLPAdain=MLPAdain,
+        TransformerGen=TransformerGenerator,
+        MappingNetwork=MappingNetwork,
+        Discriminator=Discriminator,
+    )
+    if cfg.TRAIN.w_NCE > 0.0:
+        model.MLPHead = MLPHead
+    if cfg.TRAIN.w_Instance_NCE > 0.0:
+        model.MLPHeadInst = MLPHeadInst
+
+    model_ema = Munch(
+        ContentEncoder=ContentEncoder_ema,
+        StyleEncoder=StyleEncoder_ema,
+        MappingNetwork=MappingNetwork_ema,
+    )
+    return model, model_ema
 
 
-def data_loader(data_cfg, batch_size, num_workers, train_mode):
-    # datasets_dict = {
-    #     'skycloud': TrainDataset,
-    # }
-    # selected_dataset = datasets_dict[data_cfg.dataset]
+def set_criterions(cfg: Any, device: str) -> Dict[str, Any]:
+    """
+    Create a dictionary of critererions for different loss functions used in the model.
 
-    # dataset = selected_dataset(data_cfg,train_mode)
-    source_dataset_test = SingleDataset(data_cfg)
-    data_loader = DataLoader(
-        source_dataset_test,
-        batch_size=batch_size,
-        shuffle=False,
-        # collate_fn=user_scattered_collate,
-        num_workers=num_workers,
-        pin_memory=True,        
-        drop_last=True)
+    Args:
+        cfg (object): Configuration object containing various parameters.
+        device (str): Device to be used for loss computation.
 
-    # data_loader = DataLoader(dataset, batch_size, True,num_workers=num_workers, pin_memory=True, drop_last=True)
+    Returns:
+        dict: Dictionary containing different loss functions.
+    """
 
-    return data_loader
-
-def criterion_set(train_cfg, device):
-    criterions = {}
-    criterions['GAN'] = utils.GANLoss().to(device)
-    criterions['Idt'] = torch.nn.L1Loss().to(device)
-    criterions['NCE'] = utils.PatchNCELoss(train_cfg.batch_size).to(device)
-    criterions['InstNCE'] = utils.PatchNCELoss(train_cfg.batch_size * train_cfg.data.num_box).to(device)
-    return criterions
-
-def criterion_test(test_cfg, device):
-    criterions = {}
-    criterions['GAN'] = utils.GANLoss().to(device)
-    criterions['Idt'] = torch.nn.L1Loss().to(device)
-    criterions['NCE'] = utils.PatchNCELoss(test_cfg.batch_size).to(device)
-    criterions['InstNCE'] = utils.PatchNCELoss(test_cfg.batch_size * test_cfg.data.num_box).to(device)
+    criterions = Munch()
+    criterions.GAN = utils.GANLoss().to(device)
+    criterions.Idt = torch.nn.L1Loss().to(device)
+    criterions.NCE = utils.PatchNCELoss(cfg.TRAIN.batch_size_per_gpu).to(device)
+    criterions.SemNCE = utils.SemNCELoss(cfg.TRAIN.batch_size_per_gpu).to(device)
+    criterions.InstNCE = utils.PatchNCELoss(
+        cfg.TRAIN.batch_size_per_gpu * cfg.TRAIN.n_bbox
+    ).to(device)
+    criterions.Style_Div = torch.nn.L1Loss().to(device)
+    criterions.Cycle = torch.nn.L1Loss().to(device)
+    criterions.DClass = torch.nn.CrossEntropyLoss(ignore_index=-1).to(device)
     return criterions

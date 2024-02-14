@@ -7,6 +7,7 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 import random
 import utils
 
+TRAIN = 1
 
 class UnalignedDataset(BaseDataset):
     """
@@ -26,13 +27,13 @@ class UnalignedDataset(BaseDataset):
             opt (Option class) -- stores all the experiment flags; needs to be a subclass of BaseOptions
         """
         BaseDataset.__init__(self, opt)
-        self.dir_A = os.path.join(opt.dir_A)  # create a path '/path/to/data/trainA'
-        self.dir_B = os.path.join(opt.dir_B)  # create a path '/path/to/data/trainB'
+        self.dir_A = os.path.join(opt.DATASET.dir_A)  # create a path '/path/to/data/trainA'
+        self.dir_B = os.path.join(opt.DATASET.dir_B)  # create a path '/path/to/data/trainB'
 
-        if opt.phase == "test" and not os.path.exists(self.dir_A) \
+        if not TRAIN and not os.path.exists(self.dir_A) \
            and os.path.exists(os.path.join(opt.dataroot, "valA")):
-            self.dir_A = os.path.join(opt.dataroot, "valA")
-            self.dir_B = os.path.join(opt.dataroot, "valB")
+            self.dir_A = os.path.join(opt.DATASET.dataroot, "valA")
+            self.dir_B = os.path.join(opt.DATASET.dataroot, "valB")
 
         self.A_paths = sorted(make_dataset(self.dir_A))   # load images from '/path/to/data/trainA'
         self.B_paths = sorted(make_dataset(self.dir_B))    # load images from '/path/to/data/trainB'
@@ -52,7 +53,7 @@ class UnalignedDataset(BaseDataset):
             B_paths (str)    -- image paths
         """
         A_path = self.A_paths[index % self.A_size]  # make sure index is within then range
-        if self.opt.serial_batches:   # make sure index is within then range
+        if 'serial_batches' in self.opt:   # make sure index is within then range
             index_B = index % self.B_size
         else:   # randomize the index for domain B to avoid fixed pairs.
             index_B = random.randint(0, self.B_size - 1)
