@@ -1,7 +1,6 @@
 import os
 from os.path import join as ospj
 import time
-import datetime
 from PIL import Image
 from typing import Dict, Tuple, Optional, List, Union
 from munch import Munch
@@ -28,12 +27,7 @@ class StarFormer(nn.Module):
         self.device = device
         self.local_rank = local_rank
         logging.info(f"===== Initializing StarFormer device: {device} =====")
-        # self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-        self.model, self.model_ema = build_model(cfg, device=device)
-        # local_rank = int(os.environ.get("LOCAL_RANK", 0))
-        # torch.cuda.set_device(config.LOCAL_RANK)        
-        
+        self.model, self.model_ema = build_model(cfg, device=device)   
         if cfg.TRAIN.distributed:
             for k, m in self.model.items():
                 if "MLPHead" not in k:
@@ -145,10 +139,9 @@ class StarFormer(nn.Module):
         no_decay = []
         for name, param in model.module.named_parameters():
             if not param.requires_grad:
-                continue  # frozen weights
+                continue
             if len(param.shape) == 1 or name.endswith(".bias") or (name in skip_list) or _check_keywords(name, skip_keywords):
                 no_decay.append(param)
-                # print(f"{name} has no weight decay")
             else:
                 has_decay.append(param)
         return [{'params': has_decay},
@@ -166,8 +159,6 @@ class StarFormer(nn.Module):
                 else:
                     model[k] = m
                     
-        # else:
-        #     logging.info(f"===== not distributed =====")
         model_ema = self.model_ema
         optimizer = self.optimizer
         criterions = self.criterions
@@ -210,9 +201,6 @@ class StarFormer(nn.Module):
             for i in range(0, cfg.TRAIN.epoch_iters // cfg.TRAIN.batch_size_per_gpu):
                 # logging.info(f"++++ Getting input data")
                 inputs, refs = next(input_provider)
-
-                # recon_img = torch.zeros(fake_img.shape).to(device)
-
                 # initialize MLPs the first iteration
                 if (
                     epoch == cfg.TRAIN.start_epoch
@@ -316,9 +304,7 @@ class StarFormer(nn.Module):
                 optimizer.MappingNetwork.step()
                 optimizer.StyleEncoder.step()
 
-                # ---------------------------------------------------------
                 # generate image from reference image
-                # ---------------------------------------------------------
                 # logging.info(f"++++ Generating image from reference image")
                 fake_img_ref, fake_box, features, s_trg = self.model_generation(
                     model=model,
@@ -330,10 +316,7 @@ class StarFormer(nn.Module):
                     feat_layers=cfg.MODEL.feat_layers,
                 )        
 
-
-                #---------------------------------------------------------
                 # train the discriminator            
-                #---------------------------------------------------------
                 # logging.info(f"++++ Training the discriminator")
                 total_D_loss, D_losses_ref = loss.compute_D_loss(
                     inputs=inputs,
@@ -347,9 +330,8 @@ class StarFormer(nn.Module):
                 self._reset_grad()
                 total_D_loss.backward()
                 optimizer.Discriminator.step()
-                # ---------------------------------------------------------
+
                 # train the generator
-                # ---------------------------------------------------------
                 # logging.info(f"++++ Training the generator")
                 G_loss, G_losses_ref = loss.compute_G_loss(
                     model=model,
@@ -362,8 +344,8 @@ class StarFormer(nn.Module):
                     cfg=cfg,
                     num_patches=cfg.MODEL.num_patches,
                 )
-                # logging.info(f"++++ Reconstruction input image")
 
+                # logging.info(f"++++ Reconstruction input image")
                 if cfg.TRAIN.w_Cycle > 0.0:
                     recon_img = self.model_reconstruction(
                         inputs=inputs,
@@ -386,8 +368,6 @@ class StarFormer(nn.Module):
                 # In StarGAN-V2, the mapping network and the StyleEncoder are not updated when generating from reference image
                 # optimizer.MappingNetwork.step()
                 # optimizer.StyleEncoder.step()
-
-
 
                 # compute moving average of network parameters
                 # logging.info(f"++++ Moving average of network parameters")
@@ -584,7 +564,7 @@ class StarFormer(nn.Module):
                 feat_content, sem_embed=True, sem_labels=inputs.seg, n_bbox=n_bbox
             )
         else:
-            aggregated_feat, aggregated_box, weights = model.TransformerEnc(
+            aggregated_feat, aggregated_box, _ = model.TransformerEnc(
                 feat_content, sem_labels=inputs.seg, bbox_info=inputs.bbox, n_bbox=n_bbox
             )
         utils.apply_adain_params(

@@ -16,7 +16,6 @@ class Generator(nn.Module):
         n_generator_filters=64,
         n_downsampling=2,
         use_bias=True,
-        swin = True,
         n_swin_stages = 3,
     ):
 

@@ -1,12 +1,10 @@
 import logging
-import json
 from pathlib import Path
 from itertools import chain
 import os
 import random
 
 from munch import Munch
-import numpy as np
 from PIL import Image, UnidentifiedImageError
 from typing import Tuple
 
@@ -14,13 +12,11 @@ import torch
 from torch.utils import data
 from torch.utils.data.sampler import WeightedRandomSampler
 from torchvision import transforms
-from torchvision.datasets import ImageFolder
 import torch.distributed as dist
 
-import time
 import util.custom_transforms as ct
 
-from utils import domain_to_onehot, get_domain_indexes
+from utils import domain_to_onehot
 
 Image.MAX_IMAGE_PIXELS = 103782392
 

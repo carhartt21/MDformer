@@ -43,7 +43,6 @@ if __name__ == "__main__":
         type=str,
     )
     parser.add_argument("--gpu", default=0, help="gpu to use")
-    # parser.add_argument("--local_rank", type=int, default=0)    
     
     parser.add_argument(
         "opts",
@@ -81,11 +80,6 @@ if __name__ == "__main__":
             
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
             
-
-    # device = torch.device(
-    #     f"cuda:{cfg.TRAIN.gpu_ids[0]}" if cfg.TRAIN.gpu_ids else "cpu"
-    # )
-
     # seed
     initialize.set_seed(cfg.TRAIN.seed + get_rank())
 
