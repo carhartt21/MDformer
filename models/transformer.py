@@ -230,6 +230,7 @@ class Embedding(nn.Module):
         sem_embed_C: int = 64,
         in_chans: int = 256,
         num_sem_classes: int = 16,
+        use_bbox: bool = False,
         vis: bool = False,
     ):
         """
@@ -260,13 +261,26 @@ class Embedding(nn.Module):
             embed_dim=self.patch_embed_C,
             STEM=stem,
         )
-        self.box_embed = PatchEmbedding(
-            input_size=patch_size,
-            patch_size=patch_size,
-            in_chans=in_chans,
-            embed_dim=self.patch_embed_C,
-            STEM=stem,
-        )
+        if use_bbox:
+            self.box_embed = PatchEmbedding(
+                input_size=patch_size,
+                patch_size=patch_size,
+                in_chans=in_chans,
+                embed_dim=self.patch_embed_C,
+                STEM=stem,
+            )
+            self.block_pos_embed_x = PositionalEncoding(
+                input_dim=self.patch_embed_C // 4, dropout=0.0, max_len=input_size
+            )
+            self.block_pos_embed_y = PositionalEncoding(
+                input_dim=self.patch_embed_C // 4, dropout=0.0, max_len=input_size
+            )
+            self.block_pos_embed_h = PositionalEncoding(
+                input_dim=self.patch_embed_C // 4, dropout=0.0, max_len=input_size
+            )
+            self.block_pos_embed_w = PositionalEncoding(
+                input_dim=self.patch_embed_C // 4, dropout=0.0, max_len=input_size
+            )            
 
         # Semantic Embedding
         self.sem_embed = SemanticEmbedding(
@@ -292,18 +306,6 @@ class Embedding(nn.Module):
             input_dim=self.total_embed_C // 4, dropout=0.0, max_len=input_size
         )
 
-        self.block_pos_embed_x = PositionalEncoding(
-            input_dim=self.patch_embed_C // 4, dropout=0.0, max_len=input_size
-        )
-        self.block_pos_embed_y = PositionalEncoding(
-            input_dim=self.patch_embed_C // 4, dropout=0.0, max_len=input_size
-        )
-        self.block_pos_embed_h = PositionalEncoding(
-            input_dim=self.patch_embed_C // 4, dropout=0.0, max_len=input_size
-        )
-        self.block_pos_embed_w = PositionalEncoding(
-            input_dim=self.patch_embed_C // 4, dropout=0.0, max_len=input_size
-        )
 
         # Concatenate positional embeddings
         pos_embed = torch.cat(

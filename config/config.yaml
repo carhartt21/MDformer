@@ -7,11 +7,9 @@ TRAIN:
   #contnue here
   batch_size_per_gpu: 10 # input batch size
   num_workers: 20 # # threads for loading data
-  lr: 2e-4 # initial global learning rate
   lr_MN: 1e-6 # initial learning rate for the mapping network
   optim_beta: [0.5, 0.999] # momentum terms of adam
   lr_scheduler: False
-  scheduler_step_size: 150
   w_GAN: 2.0 # weight for GAN loss
   w_StyleRecon: 5.0 # weight for style recon loss
   w_StyleDiv: 0.0 # weight for style loss
@@ -22,7 +20,7 @@ TRAIN:
   
   save_epoch: 5 # frequency of saving checkpoints at the end of epochs
 
-  distributed: False # if true use multiprocess distributed training
+  distributed: True # if true use multiprocess distributed training
   gpu_ids: [0] # gpu ids: e.g. 0, 1, 2. use -1 for CPU
   epoch_iters: 8000 # number of iterations per epoch
 

@@ -2,11 +2,16 @@ import os
 
 import argparse
 import logging
+import builtins
+from datetime import timedelta
 
 import yaml
 
 # from dotmap import DotMap
 import torch
+from torch.nn.parallel import DistributedDataParallel as DDP
+# from torch.distributed import get_rank
+
 from model import StarFormer
 
 import initialize
@@ -15,10 +20,10 @@ from visualizer import Visualizer
 # from collections import OrderedDict
 from util.config import cfg
 from data_loader import get_train_loader
+from utils import synchronize, get_rank
 
-parser = argparse.ArgumentParser(description="arguments yaml load")
-
-args = parser.parse_args()
+os.environ['MASTER_ADDR'] = 'localhost'
+os.environ['MASTER_PORT'] = '12355'
 
 # Configure logging
 logging.basicConfig(
@@ -38,34 +43,45 @@ if __name__ == "__main__":
         type=str,
     )
     parser.add_argument("--gpu", default=0, help="gpu to use")
+    
     parser.add_argument(
         "opts",
         help="Modify config options using the command-line",
         default=None,
         nargs=argparse.REMAINDER,
     )
+    
     args = parser.parse_args()
 
     cfg.merge_from_file(args.cfg)
     cfg.merge_from_list(args.opts)
+    
+    local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    
+    if cfg.TRAIN.distributed:
+        torch.cuda.set_device(local_rank)
+        torch.distributed.init_process_group(backend="nccl", init_method="env://", timeout=timedelta(0, 18000))
+        synchronize()
+        
+    if cfg.TRAIN.distributed and get_rank() != 0:
+        def print_pass(*args):
+            pass
+        builtins.print = print_pass
 
-    logger.info("===== Loaded configuration =====")
-    logger.info(f">> Source: {args.cfg}")
-    logger.info(yaml.dump(cfg))
-    # for k, v in cfg.items():
-    #     logger.info('>> {} : {}'.format(k, v))
-    log_path_model = os.path.join(cfg.TRAIN.log_path, cfg.MODEL.name)
-    if not os.path.isdir(log_path_model):
-        os.makedirs(log_path_model)
-    with open(os.path.join(log_path_model, f"config_{cfg.MODEL.name}.yaml"), "w") as f:
-        f.write(f"{cfg}")
-
-    device = torch.device(
-        f"cuda:{cfg.TRAIN.gpu_ids[0]}" if cfg.TRAIN.gpu_ids else "cpu"
-    )
-
+    if get_rank() == 0:
+        logger.info("===== Loaded configuration =====")
+        logger.info(f">> Source: {args.cfg}")
+        logger.info(yaml.dump(cfg))        
+        log_path_model = os.path.join(cfg.TRAIN.log_path, cfg.MODEL.name)
+        if not os.path.isdir(log_path_model):
+            os.makedirs(log_path_model)
+        with open(os.path.join(log_path_model, f"config_{cfg.MODEL.name}.yaml"), "w") as f:
+            f.write(f"{cfg}")
+            
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+            
     # seed
-    initialize.set_seed(cfg.TRAIN.seed)
+    initialize.set_seed(cfg.TRAIN.seed + get_rank())
 
     # data loader
     num_domains = len(cfg.DATASET.target_domain_names)
@@ -112,12 +128,16 @@ if __name__ == "__main__":
         num_workers=cfg.TRAIN.num_workers,
         max_n_bbox=cfg.TRAIN.n_bbox,
         seg_threshold=0.8,  
+        distributed=cfg.TRAIN.distributed,
     )
 
-    visualizer = Visualizer(
-        cfg.MODEL.name, cfg.TRAIN.log_path, cfg.VISUAL, cfg.DATASET.target_domain_names
-    )
+    if get_rank() == 0:
+        visualizer = Visualizer(
+            cfg.MODEL.name, cfg.TRAIN.log_path, cfg.VISUAL, cfg.DATASET.target_domain_names
+        )   
+    else:
+        visualizer = None
 
-    model = StarFormer(cfg=cfg, device=device, mode="train")
-
+    model = StarFormer(cfg=cfg, mode="train", local_rank=local_rank, device=device)
+    
     model.train(data_loader, visualizer=visualizer)

@@ -131,6 +131,10 @@ _C.TRAIN = CN()
 _C.TRAIN.pretrain = False
 # seed to sample training images
 _C.TRAIN.seed_train = 304
+# distributed training
+_C.TRAIN.distributed = True
+# number of GPUs to use
+_C.TRAIN.num_gpus = 1
 # batch size per gpu
 _C.TRAIN.batch_size_per_gpu = 4
 # maximum number of epochs to train for
@@ -144,23 +148,37 @@ _C.TRAIN.end_epoch = 300
 # iterations of each epoch (irrelevant to batch size)
 _C.TRAIN.epoch_iters = 5000
 # optimizer
-_C.TRAIN.optim = "Adam"
+_C.TRAIN.optim = "AdamW"
 # momentum terms for Adam optimizer
 _C.TRAIN.optim_beta = (0.5, 0.999)
 # weight decay
 _C.TRAIN.weight_decay = 0.0001
-# learning rate
-_C.TRAIN.lr = 2e-4
+# epsilon term for Adam optimizer
+_C.TRAIN.optim_eps = 1e-8
 # indiviudal learning rate for encoder, generator and discriminator...
-_C.TRAIN.lr_CE = 2e-4
-_C.TRAIN.lr_G = 2e-4
-_C.TRAIN.lr_D = 2e-4
+
+_C.TRAIN.warmup_steps = 20
+_C.TRAIN.weight_decay = 0.001
+_C.TRAIN.base_lr = 2e-4
+_C.TRAIN.warmup_lr = 2e-7
+_C.TRAIN.min_lr = 2e-5
+
+# learning rate for the mapping network
 _C.TRAIN.lr_MN = 2e-6
-_C.TRAIN.lr_MLP = 2e-4
+_C.TRAIN.lr_SE = 2e-4
 
 # learning rate scheduler step size
 _C.TRAIN.lr_scheduler = False
-_C.TRAIN.scheduler_step_size = 100
+
+_C.TRAIN.LR_SCHEDULER = CN()
+_C.TRAIN.LR_SCHEDULER.NAME = 'cosine'
+# Epoch interval to decay LR, used in StepLRScheduler
+_C.TRAIN.LR_SCHEDULER.DECAY_EPOCHS = 30
+# LR decay rate, used in StepLRScheduler
+_C.TRAIN.LR_SCHEDULER.DECAY_RATE = 0.1
+# warmup_prefix used in CosineLRScheduler
+_C.TRAIN.LR_SCHEDULER.WARMUP_PREFIX = True
+
 # power in poly to drop LR
 _C.TRAIN.lr_pow = 0.9
 # fix bn params, only under finetuning

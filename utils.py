@@ -6,11 +6,10 @@ import torchvision.utils as vutils
 from argparse import Namespace
 import cv2
 import numpy as np
-import torch
-from torch import nn
 import logging
 import sys
 import torch
+
 from copy import deepcopy
 import json
 import random
@@ -19,6 +18,30 @@ from einops import repeat, rearrange
 from itertools import repeat
 import collections.abc
 
+
+
+def get_rank():
+    if not torch.distributed.is_available():
+        return 0
+
+    if not torch.distributed.is_initialized():
+        return 0
+
+    return torch.distributed.get_rank()
+
+def synchronize():
+    if not torch.distributed.is_available():
+        return
+
+    if not torch.distributed.is_initialized():
+        return
+
+    world_size = torch.distributed.get_world_size()
+
+    if world_size == 1:
+        return
+
+    torch.distributed.barrier()
 
 ##################################### Visualize ##################################### 
 def denormalize(x, mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]):
@@ -331,14 +354,14 @@ def print_network(module, name):
 
 
 def he_init(module):
-    if isinstance(module, nn.Conv2d):
-        nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
+    if isinstance(module, torch.nn.Conv2d):
+        torch.nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
         if module.bias is not None:
-            nn.init.constant_(module.bias, 0)
-    if isinstance(module, nn.Linear):
-        nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
+            torch.nn.init.constant_(module.bias, 0)
+    if isinstance(module, torch.nn.Linear):
+        torch.nn.init.kaiming_normal_(module.weight, mode='fan_in', nonlinearity='relu')
         if module.bias is not None:
-            nn.init.constant_(module.bias, 0)
+            torch.nn.init.constant_(module.bias, 0)
 
 def segmentation_to_bbox(mask, bg_classes = [0,1,2]):
     """Transfer a segmentation mask derived from an image file to a dictionary of bounding boxes for each class in the map.
@@ -587,7 +610,7 @@ def copyconf(default_opt, **kwargs):
 
 ##################################### Losses ##################################### 
 
-class GANLoss(nn.Module):
+class GANLoss(torch.nn.Module):
     """Define different GAN objectives.
 
     The GANLoss class abstracts away the need to create the target label tensor
@@ -610,9 +633,9 @@ class GANLoss(nn.Module):
         self.register_buffer('fake_label', torch.tensor(target_fake_label))
         self.gan_mode = gan_mode
         if gan_mode == 'lsgan':
-            self.loss = nn.MSELoss()
+            self.loss = torch.nn.MSELoss()
         elif gan_mode == 'vanilla':
-            self.loss = nn.BCEWithLogitsLoss()
+            self.loss = torch.nn.BCEWithLogitsLoss()
         elif gan_mode in ['wgangp', 'nonsaturating']:
             self.loss = None
         else:
@@ -656,13 +679,13 @@ class GANLoss(nn.Module):
                 loss = prediction.mean()
         elif self.gan_mode == 'nonsaturating':
             if target_is_real:
-                loss = F.softplus(-prediction).view(bs, -1).mean(dim=1)
+                loss = torch.nn.functional.softplus(-prediction).view(bs, -1).mean(dim=1)
             else:
-                loss = F.softplus(prediction).view(bs, -1).mean(dim=1)
+                loss = torch.nn.functional.softplus(prediction).view(bs, -1).mean(dim=1)
         return loss
     
 
-class PatchNCELoss(nn.Module):
+class PatchNCELoss(torch.nn.Module):
     def __init__(self, batch_size, nce_T=0.07):
         """
         PatchNCELoss is a custom loss function for patch-based contrastive learning.
@@ -674,7 +697,7 @@ class PatchNCELoss(nn.Module):
         super().__init__()
         self.batch_size = batch_size
         self.nce_T = nce_T
-        self.cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction='none')
+        self.cross_entropy_loss = torch.torch.nn.CrossEntropyLoss(reduction='none')
         self.mask_dtype = torch.uint8 if version.parse(torch.__version__) < version.parse('1.2.0') else torch.bool
 
     def forward(self, feat_q, feat_k):
@@ -716,7 +739,7 @@ class PatchNCELoss(nn.Module):
     
 
 
-class INSTANCENCELoss(nn.Module):
+class INSTANCENCELoss(torch.nn.Module):
     def __init__(self, opt):
         """
         Initializes an instance of the INSTANCENCELoss class.
@@ -727,7 +750,7 @@ class INSTANCENCELoss(nn.Module):
         super().__init__()
         self.opt = opt
 
-        self.cross_entropy_loss = torch.nn.CrossEntropyLoss(reduction='none')
+        self.cross_entropy_loss = torch.torch.nn.CrossEntropyLoss(reduction='none')
         self.mask_dtype = torch.uint8 if version.parse(torch.__version__) < version.parse('1.2.0') else torch.bool
 
     def forward(self, feat_q, feat_k):
@@ -769,7 +792,7 @@ class INSTANCENCELoss(nn.Module):
 
         return loss
 
-class SemNCELoss(nn.Module):
+class SemNCELoss(torch.nn.Module):
     def __init__(self, nce_T=0.07):
         """
         PatchNCELoss is a custom loss function for patch-based contrastive learning.

@@ -9,7 +9,6 @@ from torch import nn
 from op import fused_leaky_relu, upfirdn2d
 
 
-
 def make_kernel(k):
     k = torch.tensor(k, dtype=torch.float32)
 
@@ -374,7 +373,7 @@ class StyleSwinTransformerBlock(nn.Module):
 
         self.norm2 = norm(dim, eps=eps)
         mlp_hidden_dim = int(dim * mlp_ratio)
-        # self.mlp = Mlp(in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
+
         self.mlp = blocks.MLP(
             input_dim=dim, dim=mlp_hidden_dim, output_dim=dim, activ=act_layer, n_blk=2
         )
@@ -387,14 +386,26 @@ class StyleSwinTransformerBlock(nn.Module):
             L == H * W
         ), f"input feature (L={L}) does not match input resolution ({H}*{W})"
 
-        # Double Attn
+        # Double Attention
         shortcut = x
-        x = self.norm1(x)
+        # x = self.norm1(x)
 
         qkv = (
             self.qkv(x).reshape(B, -1, 3, C).permute(2, 0, 1, 3).reshape(3 * B, H, W, C)
         )
+        # Branch 1: regular windows
         qkv_1 = qkv[:, :, :, : C // 2].reshape(3, B, H, W, C // 2)
+        q1_windows, k1_windows, v1_windows = self.get_window_qkv(qkv_1)
+        x1 = self.attn[0](q1_windows, k1_windows, v1_windows, self.attn_mask1)
+        
+        x1 = window_reverse(
+            x1.view(-1, self.window_size * self.window_size, C // 2),
+            self.window_size,
+            H,
+            W,
+        )
+    
+        # Branch 2: shifted windows 
         if self.shift_size > 0:
             qkv_2 = torch.roll(
                 qkv[:, :, :, C // 2 :],
@@ -404,18 +415,11 @@ class StyleSwinTransformerBlock(nn.Module):
         else:
             qkv_2 = qkv[:, :, :, C // 2 :].reshape(3, B, H, W, C // 2)
 
-        q1_windows, k1_windows, v1_windows = self.get_window_qkv(qkv_1)
         q2_windows, k2_windows, v2_windows = self.get_window_qkv(qkv_2)
 
-        x1 = self.attn[0](q1_windows, k1_windows, v1_windows, self.attn_mask1)
         x2 = self.attn[1](q2_windows, k2_windows, v2_windows, self.attn_mask2)
 
-        x1 = window_reverse(
-            x1.view(-1, self.window_size * self.window_size, C // 2),
-            self.window_size,
-            H,
-            W,
-        )
+
         x2 = window_reverse(
             x2.view(-1, self.window_size * self.window_size, C // 2),
             self.window_size,
@@ -427,15 +431,20 @@ class StyleSwinTransformerBlock(nn.Module):
             x2 = torch.roll(x2, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
         else:
             x2 = x2
-
+            
+        # concat and linear projection of results
         x = torch.cat(
             [x1.reshape(B, H * W, C // 2), x2.reshape(B, H * W, C // 2)], dim=2
         )
         x = self.proj(x)
+        x = self.norm1(x)
+
 
         # FFN
         x = shortcut + x
-        x = x + self.mlp(self.norm2(x))
+        x = x + self.norm2(self.mlp(x))
+
+        # x = x + self.mlp(self.norm2(x))
 
         return x
 
