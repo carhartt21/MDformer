@@ -11,11 +11,14 @@
 * OUTSIDE15k 
 
 ### Training & Test Script
-
-- train
-
+#### Training
+Adjust setting in ```config/config.yaml```
+- Train with a single GPU
 ```python
-train.py
+torchrun --standalone --nnodes=1  --nproc_per_node=1 train.py
+```
+```python
+torchrun --nproc_per_node='num_gpus' train.py
 ```
 
 - test
