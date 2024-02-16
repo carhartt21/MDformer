@@ -543,14 +543,14 @@ class StarFormer(nn.Module):
             Tuple[torch.Tensor, torch.Tensor, torch.Tensor]: Tuple containing the generated fake image, fake box, and features.
         """
         feat_content, features = model.ContentEncoder(inputs.img_src, feat_layers)
-        style_code_src = model.StyleEncoder(inputs.img_src, inputs.d_src)
+        # style_code_src = model.StyleEncoder(inputs.img_src, inputs.d_src)
         if from_lat:
             style_code_trg = model.MappingNetwork(lat_trg, refs.d_trg)
         else:
             style_code_trg = model.StyleEncoder(refs.img_ref, refs.d_trg)
         utils.apply_adain_params(
             model=model.TransformerEnc.transformer,
-            adain_params=model.MLPAdain(style_code_src),
+            adain_params=model.MLPAdain(style_code_trg),
         )
         if "bbox" in inputs and n_bbox != -1:
             features += [
@@ -603,11 +603,11 @@ class StarFormer(nn.Module):
         feat_content, _ = model.ContentEncoder(fake_img, feat_layers)
 
         # replace empty domain with predicted domain
-        style_code_fake = model.StyleEncoder(fake_img, d_trg)
+        # style_code_fake = model.StyleEncoder(fake_img, d_trg)
         style_code_rec = model.StyleEncoder(inputs.img_src, inputs.d_src)
         # use mapping network to generate a style code for the reconstruction
         utils.apply_adain_params(
-            model.MLPAdain(style_code_fake),
+            model.MLPAdain(style_code_rec),
             model.TransformerEnc.transformer,
         )
         # use segmenation map from source also for reconstruction
