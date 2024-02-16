@@ -5,6 +5,7 @@ lib==4.0.0
 munch==2.5.0
 matplotlib==3.8.2
 networkx==3.2.1
+ninja==1.8.2
 numpy==1.26.2
 opencv-python==4.8.1
 packaging==23.2
