@@ -14,6 +14,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 
 from initialize import build_model, set_criterions
+from util import lr_scheduler
 from util.checkpoint import CheckpointIO
 from data_loader import TrainProvider, TestProvider
 import utils as utils
@@ -88,6 +89,13 @@ class StarFormer(nn.Module):
                 betas=cfg.TRAIN.optim_beta,
                 weight_decay=cfg.TRAIN.weight_decay,
             )
+            
+            self.scheduler = Munch()
+            for opt in self.optimizer.keys():
+                if opt == "MappingNetwork":
+                    self.scheduler[opt] = lr_scheduler.build_scheduler(train_cfg=cfg.TRAIN, optimizer=self.optimizer[opt], min_lr=cfg.TRAIN.lr_MN, warmup_lr=cfg.TRAIN.warmup_lr)
+                else: 
+                    self.scheduler[opt] = lr_scheduler.build_scheduler(train_cfg=cfg.TRAIN, optimizer=self.optimizer[opt], min_lr=cfg.TRAIN.base_lr, warmup_lr=cfg.TRAIN.warmup_lr)
             self.ckptios = [
                 CheckpointIO(
                     ospj(cfg.DIR, cfg.MODEL.name, "ep_{}_model.ckpt"),
@@ -103,6 +111,10 @@ class StarFormer(nn.Module):
                     ospj(cfg.DIR, cfg.MODEL.name, "ep_{}_optimizer.ckpt"),
                     **self.optimizer,
                 ),
+                CheckpointIO(
+                    ospj(cfg.DIR, cfg.MODEL.name, "ep_{}_scheduler.ckpt"),
+                    **self.scheduler,
+                )
             ]
         else:
             self.ckptios = [
@@ -149,7 +161,7 @@ class StarFormer(nn.Module):
 
           
 
-    def train(self, loader, visualizer, lr_scheduler=None):
+    def train(self, loader, visualizer):
         cfg = self.cfg
         model = Munch()
         if cfg.TRAIN.distributed:     
@@ -375,6 +387,10 @@ class StarFormer(nn.Module):
                     model.MappingNetwork, model_ema.MappingNetwork, beta=0.999
                 )
                 moving_average(model.StyleEncoder, model_ema.StyleEncoder, beta=0.999)
+                
+                # update learning rate scheduler
+                # logging.info(f"++++ Updating learning rate scheduler")
+   
 
                 losses = Munch()
                 losses.D_lat = D_losses_lat
@@ -384,15 +400,18 @@ class StarFormer(nn.Module):
                 
                 total_iters = epoch * cfg.TRAIN.epoch_iters + i                
                 
-                if lr_scheduler:
-                    lr_scheduler.step_update((epoch * cfg.TRAIN.epoch_iters // cfg.TRAIN.batch_size_per_gpu + i))
-
+                if self.scheduler:
+                    self._reset_grad()
+                    for lr_scheduler in self.scheduler.values():
+                        lr_scheduler.step_update((epoch * cfg.TRAIN.epoch_iters // cfg.TRAIN.batch_size_per_gpu + i))
+                        
+                # update learning rate    
                 # decay weight for diversity sensitive loss
-                # logging.info(f"++++ Decaying weight for diversity sensitive loss")
-                if cfg.TRAIN.lambda_StyleDiv > 0:
-                    cfg.TRAIN.lambda_StyleDiv -= (
-                        initial_lambda_ds / cfg.TRAIN.w_StyleDiv_iter
-                    )
+                # # logging.info(f"++++ Decaying weight for diversity sensitive loss")
+                # if cfg.TRAIN.lambda_StyleDiv > 0:
+                #     cfg.TRAIN.lambda_StyleDiv -= (
+                #         initial_lambda_ds / cfg.TRAIN.w_StyleDiv_iter
+                #     )
 
                 if dist.get_rank() == 0: 
                 # logging.info(f"++++ Generating output")
@@ -420,10 +439,18 @@ class StarFormer(nn.Module):
                                 (total_iters % cfg.VISUAL.image_save_iter == 0),
                             )
                     # print info to console
+                        
                     if (i % cfg.VISUAL.print_losses_iter) == 0:
                         visualizer.print_current_losses(
                             epoch + 1, i, losses, time.time() - iter_date_time
                         )
+                        
+                    if (i % cfg.VISUAL.print_lrs_iter) == 0:
+                        cur_lrs= Munch()
+                        for opt in optimizer.keys():
+                            cur_lrs[opt] = optimizer[opt].param_groups[0]["lr"]
+                        visualizer.print_current_lrs(cur_lrs)
+                                                
                     # save intermediate results
                     if (
                         cfg.VISUAL.save_intermediate

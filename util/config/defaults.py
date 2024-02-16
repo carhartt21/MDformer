@@ -171,13 +171,19 @@ _C.TRAIN.lr_SE = 2e-4
 _C.TRAIN.lr_scheduler = False
 
 _C.TRAIN.LR_SCHEDULER = CN()
-_C.TRAIN.LR_SCHEDULER.NAME = 'cosine'
+_C.TRAIN.LR_SCHEDULER.name = 'cosine'
 # Epoch interval to decay LR, used in StepLRScheduler
-_C.TRAIN.LR_SCHEDULER.DECAY_EPOCHS = 30
+_C.TRAIN.LR_SCHEDULER.decay_epochs = 30
 # LR decay rate, used in StepLRScheduler
-_C.TRAIN.LR_SCHEDULER.DECAY_RATE = 0.1
+_C.TRAIN.LR_SCHEDULER.decay_rate = 0.1
 # warmup_prefix used in CosineLRScheduler
-_C.TRAIN.LR_SCHEDULER.WARMUP_PREFIX = True
+_C.TRAIN.LR_SCHEDULER.warmup = True
+# number of warmup epochs
+_C.TRAIN.LR_SCHEDULER.warmup_epochs = 5
+# miniumum learning rate
+_C.TRAIN.LR_SCHEDULER.min_lr = 1e-6
+# warmup learning rate
+_C.TRAIN.LR_SCHEDULER.warmup_lr = 1e-8
 
 # power in poly to drop LR
 _C.TRAIN.lr_pow = 0.9
@@ -272,6 +278,8 @@ _C.VISUAL.image_save_iter = 1000
 _C.VISUAL.print_losses_iter = 100
 # frequency to display loss visualizations
 _C.VISUAL.display_losses_iter = 200
+# frequency to display lrs
+_C.VISUAL.print_lrs_iter = 500
 
 # -----------------------------------------------------------------------------
 # Validation
