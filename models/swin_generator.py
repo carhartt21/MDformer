@@ -6,7 +6,7 @@ import torch
 import torch.utils.checkpoint as checkpoint
 from timm.models.layers import to_2tuple, trunc_normal_
 from torch import nn
-from op import fused_leaky_relu, upfirdn2d
+# from op import upfirdn2d
 
 
 def make_kernel(k):
@@ -20,25 +20,25 @@ def make_kernel(k):
     return k
 
 
-class Upsample(nn.Module):
-    def __init__(self, kernel, factor=2):
-        super().__init__()
+# class Upsample(nn.Module):
+#     def __init__(self, kernel, factor=2):
+#         super().__init__()
 
-        self.factor = factor
-        kernel = make_kernel(kernel) * (factor**2)
-        self.register_buffer("kernel", kernel)
+#         self.factor = factor
+#         kernel = make_kernel(kernel) * (factor**2)
+#         self.register_buffer("kernel", kernel)
 
-        p = kernel.shape[0] - factor
+#         p = kernel.shape[0] - factor
 
-        pad0 = (p + 1) // 2 + factor - 1
-        pad1 = p // 2
+#         pad0 = (p + 1) // 2 + factor - 1
+#         pad1 = p // 2
 
-        self.pad = (pad0, pad1)
+#         self.pad = (pad0, pad1)
 
-    def forward(self, input):
-        out = upfirdn2d(input, self.kernel, up=self.factor, down=1, pad=self.pad)
+#     def forward(self, input):
+#         out = upfirdn2d(input, self.kernel, up=self.factor, down=1, pad=self.pad)
 
-        return out
+#         return out
 
 
 class ToRGB(nn.Module):
@@ -50,7 +50,7 @@ class ToRGB(nn.Module):
         self.resolution = resolution
 
         if upsample:
-            self.upsample = Upsample(blur_kernel)
+            self.upsample = blocks.Upsample(channels=3)
 
         self.conv = nn.Conv2d(in_channel, 3, kernel_size=1)
         self.bias = nn.Parameter(torch.zeros(1, 3, 1, 1))

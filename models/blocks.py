@@ -488,7 +488,7 @@ class Upsample(nn.Module):
         )
 
         self.pad = get_pad_layer(pad_type)([1, 1, 1, 1])
-        logging.info(f'Upsample: pad: {self.pad} filt: {self.filt.shape} stride: {self.stride} pad_size: {self.pad_size} filt_odd: {self.filt_odd}')
+        # logging.info(f'Upsample: pad: {self.pad} filt: {self.filt.shape} stride: {self.stride} pad_size: {self.pad_size} filt_odd: {self.filt_odd}')
     def forward(self, inp):
         ret_val = F.conv_transpose2d(
             self.pad(inp),
@@ -604,23 +604,23 @@ class Normalize(nn.Module):
 ####################################    MLP Head   ####################################
 
 ####################################    Style Layers   ####################################
-class Blur(nn.Module):
-    def __init__(self, kernel, pad, upsample_factor=1):
-        super().__init__()
+# class Blur(nn.Module):
+#     def __init__(self, kernel, pad, upsample_factor=1):
+#         super().__init__()
 
-        kernel = make_kernel(kernel)
+#         kernel = make_kernel(kernel)
 
-        if upsample_factor > 1:
-            kernel = kernel * (upsample_factor ** 2)
+#         if upsample_factor > 1:
+#             kernel = kernel * (upsample_factor ** 2)
 
-        self.register_buffer('kernel', kernel)
+#         self.register_buffer('kernel', kernel)
 
-        self.pad = pad
+#         self.pad = pad
 
-    def forward(self, input):
-        out = upfirdn2d(input, self.kernel, pad=self.pad)
+#     def forward(self, input):
+#         out = upfirdn2d(input, self.kernel, pad=self.pad)
 
-        return out
+#         return out
 
 
 class PixelNorm(nn.Module):

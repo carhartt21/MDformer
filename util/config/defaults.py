@@ -278,6 +278,8 @@ _C.VISUAL.image_save_iter = 1000
 _C.VISUAL.print_losses_iter = 100
 # frequency to display loss visualizations
 _C.VISUAL.display_losses_iter = 200
+# frequency to plot lrs in visdom
+_C.VISUAL.plot_lr_iter = 500
 # frequency to display lrs
 _C.VISUAL.print_lrs_iter = 500
 
