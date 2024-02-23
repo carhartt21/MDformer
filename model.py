@@ -62,14 +62,14 @@ class StarFormer(nn.Module):
                     betas=cfg.TRAIN.optim_beta,
                     weight_decay=cfg.TRAIN.weight_decay,
                 )
-                elif net == "StyleEncoder":
-                    self.optimizer[net] = torch.optim.AdamW(
-                        params=self._set_weight_decay(self.model[net], skip, skip_keywords), 
-                        eps=cfg.TRAIN.optim_eps,
-                        lr=cfg.TRAIN.lr_SE,
-                        betas=cfg.TRAIN.optim_beta,
-                        weight_decay=cfg.TRAIN.weight_decay
-                    )
+                # elif net == "StyleEncoder":
+                #     self.optimizer[net] = torch.optim.AdamW(
+                #         params=self._set_weight_decay(self.model[net], skip, skip_keywords), 
+                #         eps=cfg.TRAIN.optim_eps,
+                #         lr=cfg.TRAIN.lr_SE,
+                #         betas=cfg.TRAIN.optim_beta,
+                #         weight_decay=cfg.TRAIN.weight_decay
+                #     )
                 elif net == "Discriminator":
                     self.optimizer[net] = torch.optim.AdamW(
                         params=self._set_weight_decay(self.model[net], skip, skip_keywords), 
@@ -98,28 +98,28 @@ class StarFormer(nn.Module):
                     self.scheduler[opt] = lr_scheduler.build_scheduler(train_cfg=cfg.TRAIN, optimizer=self.optimizer[opt], min_lr=cfg.TRAIN.base_lr, warmup_lr=cfg.TRAIN.warmup_lr)
             self.ckptios = [
                 CheckpointIO(
-                    ospj(cfg.DIR, cfg.MODEL.name, "ep_{}_model.ckpt"),
+                    ospj(cfg.TRAIN.log_path, cfg.MODEL.name, "ep_{}_model.ckpt"),
                     data_parallel=True,
                     **self.model,
                 ),
                 CheckpointIO(
-                    ospj(cfg.DIR, cfg.MODEL.name, "ep_{}_model_ema.ckpt"),
-                    data_parallel=True,
+                    ospj(cfg.TRAIN.log_path, cfg.MODEL.name, "ep_{}_model_ema.ckpt"),
+                    data_parallel=False,
                     **self.model_ema,
                 ),
                 CheckpointIO(
-                    ospj(cfg.DIR, cfg.MODEL.name, "ep_{}_optimizer.ckpt"),
+                    ospj(cfg.TRAIN.log_path, cfg.MODEL.name, "ep_{}_optimizer.ckpt"),
                     **self.optimizer,
                 ),
                 CheckpointIO(
-                    ospj(cfg.DIR, cfg.MODEL.name, "ep_{}_scheduler.ckpt"),
+                    ospj(cfg.TRAIN.log_path, cfg.MODEL.name, "ep_{}_scheduler.ckpt"),
                     **self.scheduler,
                 )
             ]
         else:
             self.ckptios = [
                 CheckpointIO(
-                    ospj(cfg.DIR, cfg.MODEL.name, "ep_{}_model_ema.ckpt"),
+                    ospj(cfg.MODEL.weight_path, cfg.MODEL.name, "ep_{}_model_ema.ckpt"),
                     data_parallel=True,
                     **self.model_ema,
                 )
@@ -188,7 +188,6 @@ class StarFormer(nn.Module):
         # resume training if necessary
         if cfg.TRAIN.start_epoch > 0:
             self._load_checkpoint(cfg.TRAIN.start_epoch)
-
         # remember the initial value of ds weight
         initial_lambda_ds = cfg.TRAIN.lambda_StyleDiv
 
@@ -438,6 +437,12 @@ class StarFormer(nn.Module):
                                 epoch,
                                 (total_iters % cfg.VISUAL.image_save_iter == 0),
                             )
+                        
+                        if (i % cfg.VISUAL.plot_lr_iter) == 0:
+                            cur_lrs= Munch()
+                            for opt in optimizer.keys():
+                                cur_lrs[opt] = optimizer[opt].param_groups[0]["lr"]                            
+                            visualizer.plot_current_lrs(epoch, float(i) / len(loader), lrs=cur_lrs)
                     # print info to console
                         
                     if (i % cfg.VISUAL.print_losses_iter) == 0:

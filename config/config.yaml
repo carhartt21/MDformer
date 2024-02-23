@@ -3,20 +3,20 @@ TRAIN:
   use_cuda: True
   seed: 21
   start_epoch: 0 # if resume, set this as a number
-  end_epoch: 100 # number of epochs of training
+  end_epoch: 500 # number of epochs of training
   #contnue here
   batch_size_per_gpu: 10 # input batch size
   num_workers: 20 # # threads for loading data
   lr_MN: 1e-6 # initial learning rate for the mapping network
   optim_beta: [0.5, 0.999] # momentum terms of adam
-  lr_scheduler: False
+  lr_scheduler: true
   w_GAN: 2.0 # weight for GAN loss
   w_StyleRecon: 5.0 # weight for style recon loss
   w_StyleDiv: 0.0 # weight for style loss
   w_NCE: 1.0 # weight for NCE loss
   w_Instance_NCE: 0.0 # weight for instance NCE loss
   n_bbox: -1 # # box
-  w_Cycle : 2.0
+  w_Cycle : 0.0
   
   save_epoch: 5 # frequency of saving checkpoints at the end of epochs
 
@@ -26,10 +26,7 @@ TRAIN:
 
 MODEL:
   name: 'StarFormer' # name of the experiment. It decides where to store samples and models
-  load_weight : False # if training from scratch, set this as False
-  load_optimizer : False # if training from scratch, set this as False
-  weight_path : None # if training from scratch, set this as None
-  weight_path: None # if training from scratch, set this as None
+  weight_path : './weights' # if training from scratch, set this as None
   feat_layers: [0,4,8] # compute NCE loss on which layers
   num_patches: 128 # number of patches per layer
   patch_size: 4  # patch size
@@ -69,8 +66,8 @@ MODEL:
 
 DATASET:
   target_domain_names: ['summer', 'winter', 'spring', 'autumn'] # domains to be used for training
-  ref_dir: '/mnt/Data/chge7185/datasets/StarFormer/ref_images' # path of reference images
-  train_dir: '/mnt/Data/chge7185/datasets/StarFormer/images/' # path of input images
+  ref_dir: '/home/chge7185/datasets/StarFormer/ref_images' # path of reference images
+  train_dir: '/home/chge7185/datasets/StarFormer/images/' # path of input images
   max_dataset_size: -1 # Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded. -1 : no maximum number of samples
   
 

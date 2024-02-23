@@ -18,6 +18,8 @@ class CheckpointIO(object):
         logging.info(f">> Saving checkpoint to {fname}")
         outdict = {}
         for name, module in self.module_dict.items():
+            if "MLPHead" in name:
+                continue            
             logging.info(f">> Saving {name}")
             if self.data_parallel:
                 outdict[name] = module.module.state_dict()
@@ -33,8 +35,7 @@ class CheckpointIO(object):
         if torch.cuda.is_available():
             module_dict = torch.load(fname)
         else:
-            module_dict = torch.load(fname, map_location=torch.device("cpu"))
-
+            module_dict = torch.load(fname, map_location=torch.device("cpu"))            
         for name, module in self.module_dict.items():
             if "MLPHead" in name:
                 continue

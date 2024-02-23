@@ -224,13 +224,52 @@ class Visualizer():
                 X=np.stack([np.array(plot_data['X'])] * len(plot_data['legend']), 1),
                 Y=np.array(plot_data['Y']),
                 opts={
-                    'title': self.name,
+                    'title': f'{self.name}' Losses,
                     'legend': plot_data['legend'],
                     'xlabel': 'epoch',
                     'ylabel': 'loss'},
                 win=self.display_id)
         except VisdomExceptionBase:
             self.create_visdom_connections()
+            
+
+    def plot_current_lrs(self, epoch, counter_ratio, lrs):
+        """display the current learning rates on visdom display: dictionary of error labels and values
+
+        Parameters:
+            epoch (int)           -- current epoch
+            counter_ratio (float) -- progress (percentage) in the current epoch, between 0 to 1
+            lrs (OrderedDict)  -- learning rates stored in the format of (name, float) pairs
+        """
+        if len(lrs) == 0:
+            return
+        _lrs = {}
+
+        for l, m in lrs.items():
+            _lrs[f'{l}'] = m
+
+        plot_name = '_'.join(list(_lrs.keys()))
+
+        if plot_name not in self.plot_data:
+            self.plot_data[plot_name] = {'X': [], 'Y': [], 'legend': list(_lrs.keys())}
+
+        plot_data = self.plot_data[plot_name]
+        plot_id = list(self.plot_data.keys()).index(plot_name)
+
+        plot_data['X'].append(epoch + counter_ratio)
+        plot_data['Y'].append([_lrs[k] for k in plot_data['legend']])
+        try:
+            self.vis.line(
+                X=np.stack([np.array(plot_data['X'])] * len(plot_data['legend']), 1),
+                Y=np.array(plot_data['Y']),
+                opts={
+                    'title': f'{self.name} Learning Rates',
+                    'legend': plot_data['legend'],
+                    'xlabel': 'epoch',
+                    'ylabel': 'loss'},
+                win=self.display_id+2)
+        except VisdomExceptionBase:
+            self.create_visdom_connections()            
 
     # losses: same format as |losses| of plot_current_losses
     def print_current_losses(self, epoch, iters, losses, t_comp):
@@ -265,7 +304,7 @@ class Visualizer():
         """
         message = f'===== Learning rates ===== \n'
         for l, m in lrs.items():
-            message += f'>>>> {l}: {m:.3f} \n'
+            message += f'>>>> {l}: {m:.8f} \n'
 
         logging.info('{}'.format(message))  # print the message
         with open(self.log_name, "a") as log_file:
