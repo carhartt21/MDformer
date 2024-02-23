@@ -313,7 +313,7 @@ class StarFormer(nn.Module):
 
                 optimizer.Generator.step()
                 optimizer.MappingNetwork.step()
-                optimizer.StyleEncoder.step()
+                # optimizer.StyleEncoder.step()
 
                 # generate image from reference image
                 # logging.info(f"++++ Generating image from reference image")
