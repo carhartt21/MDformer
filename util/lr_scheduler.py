@@ -11,12 +11,13 @@ import torch
 from timm.scheduler.cosine_lr import CosineLRScheduler
 from timm.scheduler.step_lr import StepLRScheduler
 from timm.scheduler.scheduler import Scheduler
-
+from torch.optim.lr_scheduler import OneCycleLR
 
 def build_scheduler(train_cfg, optimizer, min_lr=1e-5, warmup_lr=1e-5):
     num_steps = int(train_cfg.num_epoch * train_cfg.epoch_iters)
     warmup_steps = int(train_cfg.LR_SCHEDULER.warmup_epochs * train_cfg.epoch_iters)
     decay_steps = int(train_cfg.LR_SCHEDULER.decay_epochs * train_cfg.epoch_iters)
+    n_epochs = train_cfg.end_epoch - train_cfg.start_epoch
 
     lr_scheduler = None
     if train_cfg.LR_SCHEDULER.name == 'cosine':
@@ -29,6 +30,16 @@ def build_scheduler(train_cfg, optimizer, min_lr=1e-5, warmup_lr=1e-5):
             cycle_limit=1,
             t_in_epochs=False,
             warmup_prefix=train_cfg.LR_SCHEDULER.warmup,
+        )
+    elif train_cfg.LR_SCHEDULER.name == 'onecycle':
+        lr_scheduler = OneCycleLR(
+            optimizer,
+            max_lr=[i['lr'] for i in optimizer.param_groups],
+            total_steps=train_cfg.end_epoch,
+            div_factor=25,
+            pct_start=0.1,
+            anneal_strategy='cos',
+            final_div_factor=1e4
         )
     elif train_cfg.LR_SCHEDULER.name == 'linear':
         lr_scheduler = LinearLRScheduler(

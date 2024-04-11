@@ -399,10 +399,10 @@ class StarFormer(nn.Module):
                 
                 total_iters = epoch * cfg.TRAIN.epoch_iters + i                
                 
-                if self.scheduler:
-                    self._reset_grad()
-                    for lr_scheduler in self.scheduler.values():
-                        lr_scheduler.step_update((epoch * cfg.TRAIN.epoch_iters // cfg.TRAIN.batch_size_per_gpu + i))
+                # if self.scheduler:
+                #     self._reset_grad()
+                #     for lr_scheduler in self.scheduler.values():
+                #         lr_scheduler.step((epoch * cfg.TRAIN.epoch_iters // cfg.TRAIN.batch_size_per_gpu + i))
                         
                 # update learning rate    
                 # decay weight for diversity sensitive loss
@@ -508,6 +508,11 @@ class StarFormer(nn.Module):
                                 )
                             )
             # Save model & optimizer and example images
+            if self.scheduler:
+                self._reset_grad()
+                for lr_scheduler in self.scheduler.values():
+                    lr_scheduler.step()
+                        
             if dist.get_rank() == 0 and epoch > 0 and (epoch % cfg.TRAIN.save_epoch) == 0:
                 self._save_checkpoint(epoch=epoch)
 

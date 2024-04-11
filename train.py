@@ -143,11 +143,11 @@ if __name__ == "__main__":
     linear_scaled_warmup_lr = cfg.TRAIN.LR_SCHEDULER.warmup_lr * cfg.TRAIN.batch_size_per_gpu  * get_world_size() / 512.0
     linear_scaled_min_lr = cfg.TRAIN.LR_SCHEDULER.min_lr * cfg.TRAIN.batch_size_per_gpu * get_world_size() / 512.0
     # gradient accumulation also need to scale the learning rate
-    cfg.defrost()
-    cfg.TRAIN.base_lr = linear_scaled_lr
-    cfg.TRAIN.warmup_lr = linear_scaled_warmup_lr
-    cfg.TRAIN.min_lr = linear_scaled_min_lr
-    cfg.freeze()
+    # cfg.defrost()
+    # cfg.TRAIN.base_lr = linear_scaled_lr
+    # cfg.TRAIN.warmup_lr = linear_scaled_warmup_lr
+    # cfg.TRAIN.min_lr = linear_scaled_min_lr
+    # cfg.freeze()
 
     model = StarFormer(cfg=cfg, mode="train", local_rank=local_rank, device=device)
     
